@@ -4317,7 +4317,7 @@ ITransaction* YStatement::execute(CheckStatusWrapper* status, ITransaction* tran
 	return transaction;
 }
 
-IResultSet* YStatement::openCursor(Firebird::CheckStatusWrapper* status, ITransaction* transaction,
+IResultSet* YStatement::openCursor(CheckStatusWrapper* status, ITransaction* transaction,
 	IMessageMetadata* inMetadata, void* inBuffer, IMessageMetadata* outMetadata, unsigned int flags)
 {
 	try
@@ -4367,6 +4367,31 @@ void YStatement::free(CheckStatusWrapper* status)
 	{
 		e.stuffException(status);
 	}
+}
+
+YBatch* YStatement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMetadata, unsigned parLength,
+	const unsigned char* par)
+{
+	try
+	{
+		YEntry<YStatement> entry(status, this);
+
+		IBatch* batch = entry.next()->createBatch(status, inMetadata, parLength, par);
+		if (status->getState() & Firebird::IStatus::STATE_ERRORS)
+		{
+			return NULL;
+		}
+
+		YBatch*	newBatch = FB_NEW YBatch(attachment, batch);
+		newBatch->addRef();
+		return newBatch;
+	}
+	catch (const Exception& e)
+	{
+		e.stuffException(status);
+	}
+
+	return NULL;
 }
 
 //-------------------------------------
@@ -4749,6 +4774,126 @@ void YResultSet::close(CheckStatusWrapper* status)
 
 		if (!(status->getState() & Firebird::IStatus::STATE_ERRORS))
 			destroy(DF_RELEASE);
+	}
+	catch (const Exception& e)
+	{
+		e.stuffException(status);
+	}
+}
+
+//-------------------------------------
+
+
+YBatch::YBatch(YAttachment* anAttachment, IBatch* aNext)
+	: YHelper(aNext),
+	  attachment(anAttachment)
+{ }
+
+
+void YBatch::destroy(unsigned dstrFlags)
+{
+	destroy2(dstrFlags);
+}
+
+void YBatch::add(CheckStatusWrapper* status, unsigned count, const void* inBuffer)
+{
+	try
+	{
+		YEntry<YBatch> entry(status, this);
+
+		entry.next()->add(status, count, inBuffer);
+	}
+	catch (const Exception& e)
+	{
+		e.stuffException(status);
+	}
+}
+
+
+void YBatch::addBlob(CheckStatusWrapper* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId)
+{
+	try
+	{
+		YEntry<YBatch> entry(status, this);
+
+		entry.next()->addBlob(status, length, inBuffer, blobId);
+	}
+	catch (const Exception& e)
+	{
+		e.stuffException(status);
+	}
+}
+
+
+void YBatch::appendBlobData(CheckStatusWrapper* status, unsigned length, const void* inBuffer)
+{
+	try
+	{
+		YEntry<YBatch> entry(status, this);
+
+		entry.next()->appendBlobData(status, length, inBuffer);
+	}
+	catch (const Exception& e)
+	{
+		e.stuffException(status);
+	}
+}
+
+
+void YBatch::addBlobStream(CheckStatusWrapper* status, uint length, const BlobStream* inBuffer)
+{
+	try
+	{
+		YEntry<YBatch> entry(status, this);
+
+		entry.next()->addBlobStream(status, length, inBuffer);
+	}
+	catch (const Exception& e)
+	{
+		e.stuffException(status);
+	}
+}
+
+
+void YBatch::registerBlob(CheckStatusWrapper* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId)
+{
+	try
+	{
+		YEntry<YBatch> entry(status, this);
+
+		entry.next()->registerBlob(status, existingBlob, blobId);
+	}
+	catch (const Exception& e)
+	{
+		e.stuffException(status);
+	}
+}
+
+
+IBatchCompletionState* YBatch::execute(CheckStatusWrapper* status, ITransaction* transaction)
+{
+	try
+	{
+		YEntry<YBatch> entry(status, this);
+
+		return entry.next()->execute(status, transaction);
+	}
+	catch (const Exception& e)
+	{
+		e.stuffException(status);
+	}
+
+	return NULL;
+}
+
+
+void YBatch::cancel(CheckStatusWrapper* status)
+{
+	try
+	{
+		YEntry<YBatch> entry(status, this);
+
+		entry.next()->cancel(status);
 	}
 	catch (const Exception& e)
 	{
@@ -5655,8 +5800,34 @@ void YAttachment::setStatementTimeout(CheckStatusWrapper* status, unsigned int t
 }
 
 
-//-------------------------------------
+YBatch* YAttachment::createBatch(CheckStatusWrapper* status, unsigned stmtLength, const char* sqlStmt,
+	unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par)
+{
+	try
+	{
+		YEntry<YAttachment> entry(status, this);
 
+		IBatch* batch = entry.next()->createBatch(status, stmtLength, sqlStmt, dialect, inMetadata,
+			parLength, par);
+		if (status->getState() & Firebird::IStatus::STATE_ERRORS)
+		{
+			return NULL;
+		}
+
+		YBatch*	newBatch = FB_NEW YBatch(this, batch);
+		newBatch->addRef();
+		return newBatch;
+	}
+	catch (const Exception& e)
+	{
+		e.stuffException(status);
+	}
+
+	return NULL;
+}
+
+
+//-------------------------------------
 
 YService::YService(IProvider* aProvider, IService* aNext, bool utf8)
 	: YHelper(aNext),

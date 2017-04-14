@@ -344,6 +344,9 @@ public:
 		statement->rsr_timeout = timeOut;
 	}
 
+	IBatch* createBatch(CheckStatusWrapper* status, IMessageMetadata* inMetadata,
+		unsigned parLength, const unsigned char* par);
+
 public:
 	Statement(Rsr* handle, Attachment* a, unsigned aDialect)
 		: metadata(getPool(), this, NULL),
@@ -535,6 +538,9 @@ public:
 	void setIdleTimeout(CheckStatusWrapper* status, unsigned int timeOut);
 	unsigned int getStatementTimeout(CheckStatusWrapper* status);
 	void setStatementTimeout(CheckStatusWrapper* status, unsigned int timeOut);
+
+	IBatch* createBatch(Firebird::CheckStatusWrapper* status, unsigned stmtLength, const char* sqlStmt,
+		unsigned dialect, Firebird::IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par);
 
 public:
 	Attachment(Rdb* handle, const PathName& path)
@@ -1856,7 +1862,37 @@ void Attachment::setStatementTimeout(CheckStatusWrapper* status, unsigned int ti
 }
 
 
-Firebird::ITransaction* Statement::execute(CheckStatusWrapper* status, Firebird::ITransaction* apiTra,
+IBatch* Attachment::createBatch(CheckStatusWrapper* status, unsigned stmtLength, const char* sqlStmt,
+	unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par)
+{
+	try
+	{
+		Arg::Gds(isc_wish_list).raise();
+	}
+	catch (const Exception& ex)
+	{
+		ex.stuffException(status);
+	}
+	return nullptr;
+}
+
+
+IBatch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMetadata,
+	unsigned parLength, const unsigned char* par)
+{
+	try
+	{
+		Arg::Gds(isc_wish_list).raise();
+	}
+	catch (const Exception& ex)
+	{
+		ex.stuffException(status);
+	}
+	return nullptr;
+}
+
+
+ITransaction* Statement::execute(CheckStatusWrapper* status, ITransaction* apiTra,
 	IMessageMetadata* inMetadata, void* inBuffer, IMessageMetadata* outMetadata, void* outBuffer)
 {
 /**************************************

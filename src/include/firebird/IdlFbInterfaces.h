@@ -49,6 +49,8 @@ namespace Firebird
 	class IMetadataBuilder;
 	class IResultSet;
 	class IStatement;
+	class IBatch;
+	class IBatchCompletionState;
 	class IRequest;
 	class IEvents;
 	class IEventBlock;
@@ -1558,6 +1560,7 @@ namespace Firebird
 			unsigned (CLOOP_CARG *getFlags)(IStatement* self, IStatus* status) throw();
 			unsigned (CLOOP_CARG *getTimeout)(IStatement* self, IStatus* status) throw();
 			void (CLOOP_CARG *setTimeout)(IStatement* self, IStatus* status, unsigned timeOut) throw();
+			IBatch* (CLOOP_CARG *createBatch)(IStatement* self, IStatus* status, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par) throw();
 		};
 
 	protected:
@@ -1586,6 +1589,9 @@ namespace Firebird
 		static const unsigned FLAG_HAS_CURSOR = 1;
 		static const unsigned FLAG_REPEAT_EXECUTE = 2;
 		static const unsigned CURSOR_TYPE_SCROLLABLE = 1;
+		static const unsigned char BATCH_MULTIERROR = 1;
+		static const unsigned char BATCH_RECORD_COUNTS = 2;
+		static const unsigned char PIPE_BUFFER_SIZE = 1;
 
 		template <typename StatusType> void getInfo(StatusType* status, unsigned itemsLength, const unsigned char* items, unsigned bufferLength, unsigned char* buffer)
 		{
@@ -1697,6 +1703,163 @@ namespace Firebird
 			StatusType::clearException(status);
 			static_cast<VTable*>(this->cloopVTable)->setTimeout(this, status, timeOut);
 			StatusType::checkException(status);
+		}
+
+		template <typename StatusType> IBatch* createBatch(StatusType* status, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par)
+		{
+			if (cloopVTable->version < 4)
+			{
+				StatusType::setVersionError(status, "IStatement", cloopVTable->version, 4);
+				StatusType::checkException(status);
+				return 0;
+			}
+			StatusType::clearException(status);
+			IBatch* ret = static_cast<VTable*>(this->cloopVTable)->createBatch(this, status, inMetadata, parLength, par);
+			StatusType::checkException(status);
+			return ret;
+		}
+	};
+
+	class IBatch : public IReferenceCounted
+	{
+	public:
+		struct VTable : public IReferenceCounted::VTable
+		{
+			void (CLOOP_CARG *add)(IBatch* self, IStatus* status, unsigned count, const void* inBuffer) throw();
+			void (CLOOP_CARG *addBlob)(IBatch* self, IStatus* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId) throw();
+			void (CLOOP_CARG *appendBlobData)(IBatch* self, IStatus* status, unsigned length, const void* inBuffer) throw();
+			void (CLOOP_CARG *addBlobStream)(IBatch* self, IStatus* status, unsigned length, const BlobStream* inBuffer) throw();
+			void (CLOOP_CARG *registerBlob)(IBatch* self, IStatus* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId) throw();
+			IBatchCompletionState* (CLOOP_CARG *execute)(IBatch* self, IStatus* status, ITransaction* transaction) throw();
+			void (CLOOP_CARG *cancel)(IBatch* self, IStatus* status) throw();
+		};
+
+	protected:
+		IBatch(DoNotInherit)
+			: IReferenceCounted(DoNotInherit())
+		{
+		}
+
+		~IBatch()
+		{
+		}
+
+	public:
+		static const unsigned VERSION = 3;
+
+		static const unsigned char MULTIERROR = 1;
+		static const unsigned char RECORD_COUNTS = 2;
+		static const unsigned char BUFFER_BYTES_SIZE = 3;
+		static const unsigned char USER_BLOB_IDS = 4;
+
+		template <typename StatusType> void add(StatusType* status, unsigned count, const void* inBuffer)
+		{
+			StatusType::clearException(status);
+			static_cast<VTable*>(this->cloopVTable)->add(this, status, count, inBuffer);
+			StatusType::checkException(status);
+		}
+
+		template <typename StatusType> void addBlob(StatusType* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId)
+		{
+			StatusType::clearException(status);
+			static_cast<VTable*>(this->cloopVTable)->addBlob(this, status, length, inBuffer, blobId);
+			StatusType::checkException(status);
+		}
+
+		template <typename StatusType> void appendBlobData(StatusType* status, unsigned length, const void* inBuffer)
+		{
+			StatusType::clearException(status);
+			static_cast<VTable*>(this->cloopVTable)->appendBlobData(this, status, length, inBuffer);
+			StatusType::checkException(status);
+		}
+
+		template <typename StatusType> void addBlobStream(StatusType* status, unsigned length, const BlobStream* inBuffer)
+		{
+			StatusType::clearException(status);
+			static_cast<VTable*>(this->cloopVTable)->addBlobStream(this, status, length, inBuffer);
+			StatusType::checkException(status);
+		}
+
+		template <typename StatusType> void registerBlob(StatusType* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId)
+		{
+			StatusType::clearException(status);
+			static_cast<VTable*>(this->cloopVTable)->registerBlob(this, status, existingBlob, blobId);
+			StatusType::checkException(status);
+		}
+
+		template <typename StatusType> IBatchCompletionState* execute(StatusType* status, ITransaction* transaction)
+		{
+			StatusType::clearException(status);
+			IBatchCompletionState* ret = static_cast<VTable*>(this->cloopVTable)->execute(this, status, transaction);
+			StatusType::checkException(status);
+			return ret;
+		}
+
+		template <typename StatusType> void cancel(StatusType* status)
+		{
+			StatusType::clearException(status);
+			static_cast<VTable*>(this->cloopVTable)->cancel(this, status);
+			StatusType::checkException(status);
+		}
+	};
+
+	class IBatchCompletionState : public IDisposable
+	{
+	public:
+		struct VTable : public IDisposable::VTable
+		{
+			unsigned (CLOOP_CARG *getSize)(IBatchCompletionState* self, IStatus* status) throw();
+			int (CLOOP_CARG *getState)(IBatchCompletionState* self, IStatus* status, unsigned pos) throw();
+			unsigned (CLOOP_CARG *findError)(IBatchCompletionState* self, IStatus* status, unsigned pos) throw();
+			FB_BOOLEAN (CLOOP_CARG *getStatus)(IBatchCompletionState* self, IStatus* status, unsigned pos) throw();
+		};
+
+	protected:
+		IBatchCompletionState(DoNotInherit)
+			: IDisposable(DoNotInherit())
+		{
+		}
+
+		~IBatchCompletionState()
+		{
+		}
+
+	public:
+		static const unsigned VERSION = 3;
+
+		static const int ERROR_STATE = -1;
+		static const unsigned NO_MORE_ERRORS = -1;
+
+		template <typename StatusType> unsigned getSize(StatusType* status)
+		{
+			StatusType::clearException(status);
+			unsigned ret = static_cast<VTable*>(this->cloopVTable)->getSize(this, status);
+			StatusType::checkException(status);
+			return ret;
+		}
+
+		template <typename StatusType> int getState(StatusType* status, unsigned pos)
+		{
+			StatusType::clearException(status);
+			int ret = static_cast<VTable*>(this->cloopVTable)->getState(this, status, pos);
+			StatusType::checkException(status);
+			return ret;
+		}
+
+		template <typename StatusType> unsigned findError(StatusType* status, unsigned pos)
+		{
+			StatusType::clearException(status);
+			unsigned ret = static_cast<VTable*>(this->cloopVTable)->findError(this, status, pos);
+			StatusType::checkException(status);
+			return ret;
+		}
+
+		template <typename StatusType> FB_BOOLEAN getStatus(StatusType* status, unsigned pos)
+		{
+			StatusType::clearException(status);
+			FB_BOOLEAN ret = static_cast<VTable*>(this->cloopVTable)->getStatus(this, status, pos);
+			StatusType::checkException(status);
+			return ret;
 		}
 	};
 
@@ -1895,6 +2058,7 @@ namespace Firebird
 			void (CLOOP_CARG *setIdleTimeout)(IAttachment* self, IStatus* status, unsigned timeOut) throw();
 			unsigned (CLOOP_CARG *getStatementTimeout)(IAttachment* self, IStatus* status) throw();
 			void (CLOOP_CARG *setStatementTimeout)(IAttachment* self, IStatus* status, unsigned timeOut) throw();
+			IBatch* (CLOOP_CARG *createBatch)(IAttachment* self, IStatus* status, unsigned stmtLength, const char* sqlStmt, unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par) throw();
 		};
 
 	protected:
@@ -2098,6 +2262,20 @@ namespace Firebird
 			StatusType::clearException(status);
 			static_cast<VTable*>(this->cloopVTable)->setStatementTimeout(this, status, timeOut);
 			StatusType::checkException(status);
+		}
+
+		template <typename StatusType> IBatch* createBatch(StatusType* status, unsigned stmtLength, const char* sqlStmt, unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par)
+		{
+			if (cloopVTable->version < 4)
+			{
+				StatusType::setVersionError(status, "IAttachment", cloopVTable->version, 4);
+				StatusType::checkException(status);
+				return 0;
+			}
+			StatusType::clearException(status);
+			IBatch* ret = static_cast<VTable*>(this->cloopVTable)->createBatch(this, status, stmtLength, sqlStmt, dialect, inMetadata, parLength, par);
+			StatusType::checkException(status);
+			return ret;
 		}
 	};
 
@@ -8272,6 +8450,7 @@ namespace Firebird
 					this->getFlags = &Name::cloopgetFlagsDispatcher;
 					this->getTimeout = &Name::cloopgetTimeoutDispatcher;
 					this->setTimeout = &Name::cloopsetTimeoutDispatcher;
+					this->createBatch = &Name::cloopcreateBatchDispatcher;
 				}
 			} vTable;
 
@@ -8469,6 +8648,21 @@ namespace Firebird
 			}
 		}
 
+		static IBatch* CLOOP_CARG cloopcreateBatchDispatcher(IStatement* self, IStatus* status, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				return static_cast<Name*>(self)->Name::createBatch(&status2, inMetadata, parLength, par);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+				return static_cast<IBatch*>(0);
+			}
+		}
+
 		static void CLOOP_CARG cloopaddRefDispatcher(IReferenceCounted* self) throw()
 		{
 			try
@@ -8521,6 +8715,298 @@ namespace Firebird
 		virtual unsigned getFlags(StatusType* status) = 0;
 		virtual unsigned getTimeout(StatusType* status) = 0;
 		virtual void setTimeout(StatusType* status, unsigned timeOut) = 0;
+		virtual IBatch* createBatch(StatusType* status, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par) = 0;
+	};
+
+	template <typename Name, typename StatusType, typename Base>
+	class IBatchBaseImpl : public Base
+	{
+	public:
+		typedef IBatch Declaration;
+
+		IBatchBaseImpl(DoNotInherit = DoNotInherit())
+		{
+			static struct VTableImpl : Base::VTable
+			{
+				VTableImpl()
+				{
+					this->version = Base::VERSION;
+					this->addRef = &Name::cloopaddRefDispatcher;
+					this->release = &Name::cloopreleaseDispatcher;
+					this->add = &Name::cloopaddDispatcher;
+					this->addBlob = &Name::cloopaddBlobDispatcher;
+					this->appendBlobData = &Name::cloopappendBlobDataDispatcher;
+					this->addBlobStream = &Name::cloopaddBlobStreamDispatcher;
+					this->registerBlob = &Name::cloopregisterBlobDispatcher;
+					this->execute = &Name::cloopexecuteDispatcher;
+					this->cancel = &Name::cloopcancelDispatcher;
+				}
+			} vTable;
+
+			this->cloopVTable = &vTable;
+		}
+
+		static void CLOOP_CARG cloopaddDispatcher(IBatch* self, IStatus* status, unsigned count, const void* inBuffer) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				static_cast<Name*>(self)->Name::add(&status2, count, inBuffer);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+			}
+		}
+
+		static void CLOOP_CARG cloopaddBlobDispatcher(IBatch* self, IStatus* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				static_cast<Name*>(self)->Name::addBlob(&status2, length, inBuffer, blobId);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+			}
+		}
+
+		static void CLOOP_CARG cloopappendBlobDataDispatcher(IBatch* self, IStatus* status, unsigned length, const void* inBuffer) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				static_cast<Name*>(self)->Name::appendBlobData(&status2, length, inBuffer);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+			}
+		}
+
+		static void CLOOP_CARG cloopaddBlobStreamDispatcher(IBatch* self, IStatus* status, unsigned length, const BlobStream* inBuffer) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				static_cast<Name*>(self)->Name::addBlobStream(&status2, length, inBuffer);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+			}
+		}
+
+		static void CLOOP_CARG cloopregisterBlobDispatcher(IBatch* self, IStatus* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				static_cast<Name*>(self)->Name::registerBlob(&status2, existingBlob, blobId);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+			}
+		}
+
+		static IBatchCompletionState* CLOOP_CARG cloopexecuteDispatcher(IBatch* self, IStatus* status, ITransaction* transaction) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				return static_cast<Name*>(self)->Name::execute(&status2, transaction);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+				return static_cast<IBatchCompletionState*>(0);
+			}
+		}
+
+		static void CLOOP_CARG cloopcancelDispatcher(IBatch* self, IStatus* status) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				static_cast<Name*>(self)->Name::cancel(&status2);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+			}
+		}
+
+		static void CLOOP_CARG cloopaddRefDispatcher(IReferenceCounted* self) throw()
+		{
+			try
+			{
+				static_cast<Name*>(self)->Name::addRef();
+			}
+			catch (...)
+			{
+				StatusType::catchException(0);
+			}
+		}
+
+		static int CLOOP_CARG cloopreleaseDispatcher(IReferenceCounted* self) throw()
+		{
+			try
+			{
+				return static_cast<Name*>(self)->Name::release();
+			}
+			catch (...)
+			{
+				StatusType::catchException(0);
+				return static_cast<int>(0);
+			}
+		}
+	};
+
+	template <typename Name, typename StatusType, typename Base = IReferenceCountedImpl<Name, StatusType, Inherit<IVersionedImpl<Name, StatusType, Inherit<IBatch> > > > >
+	class IBatchImpl : public IBatchBaseImpl<Name, StatusType, Base>
+	{
+	protected:
+		IBatchImpl(DoNotInherit = DoNotInherit())
+		{
+		}
+
+	public:
+		virtual ~IBatchImpl()
+		{
+		}
+
+		virtual void add(StatusType* status, unsigned count, const void* inBuffer) = 0;
+		virtual void addBlob(StatusType* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId) = 0;
+		virtual void appendBlobData(StatusType* status, unsigned length, const void* inBuffer) = 0;
+		virtual void addBlobStream(StatusType* status, unsigned length, const BlobStream* inBuffer) = 0;
+		virtual void registerBlob(StatusType* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId) = 0;
+		virtual IBatchCompletionState* execute(StatusType* status, ITransaction* transaction) = 0;
+		virtual void cancel(StatusType* status) = 0;
+	};
+
+	template <typename Name, typename StatusType, typename Base>
+	class IBatchCompletionStateBaseImpl : public Base
+	{
+	public:
+		typedef IBatchCompletionState Declaration;
+
+		IBatchCompletionStateBaseImpl(DoNotInherit = DoNotInherit())
+		{
+			static struct VTableImpl : Base::VTable
+			{
+				VTableImpl()
+				{
+					this->version = Base::VERSION;
+					this->dispose = &Name::cloopdisposeDispatcher;
+					this->getSize = &Name::cloopgetSizeDispatcher;
+					this->getState = &Name::cloopgetStateDispatcher;
+					this->findError = &Name::cloopfindErrorDispatcher;
+					this->getStatus = &Name::cloopgetStatusDispatcher;
+				}
+			} vTable;
+
+			this->cloopVTable = &vTable;
+		}
+
+		static unsigned CLOOP_CARG cloopgetSizeDispatcher(IBatchCompletionState* self, IStatus* status) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				return static_cast<Name*>(self)->Name::getSize(&status2);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+				return static_cast<unsigned>(0);
+			}
+		}
+
+		static int CLOOP_CARG cloopgetStateDispatcher(IBatchCompletionState* self, IStatus* status, unsigned pos) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				return static_cast<Name*>(self)->Name::getState(&status2, pos);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+				return static_cast<int>(0);
+			}
+		}
+
+		static unsigned CLOOP_CARG cloopfindErrorDispatcher(IBatchCompletionState* self, IStatus* status, unsigned pos) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				return static_cast<Name*>(self)->Name::findError(&status2, pos);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+				return static_cast<unsigned>(0);
+			}
+		}
+
+		static FB_BOOLEAN CLOOP_CARG cloopgetStatusDispatcher(IBatchCompletionState* self, IStatus* status, unsigned pos) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				return static_cast<Name*>(self)->Name::getStatus(&status2, pos);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+				return static_cast<FB_BOOLEAN>(0);
+			}
+		}
+
+		static void CLOOP_CARG cloopdisposeDispatcher(IDisposable* self) throw()
+		{
+			try
+			{
+				static_cast<Name*>(self)->Name::dispose();
+			}
+			catch (...)
+			{
+				StatusType::catchException(0);
+			}
+		}
+	};
+
+	template <typename Name, typename StatusType, typename Base = IDisposableImpl<Name, StatusType, Inherit<IVersionedImpl<Name, StatusType, Inherit<IBatchCompletionState> > > > >
+	class IBatchCompletionStateImpl : public IBatchCompletionStateBaseImpl<Name, StatusType, Base>
+	{
+	protected:
+		IBatchCompletionStateImpl(DoNotInherit = DoNotInherit())
+		{
+		}
+
+	public:
+		virtual ~IBatchCompletionStateImpl()
+		{
+		}
+
+		virtual unsigned getSize(StatusType* status) = 0;
+		virtual int getState(StatusType* status, unsigned pos) = 0;
+		virtual unsigned findError(StatusType* status, unsigned pos) = 0;
+		virtual FB_BOOLEAN getStatus(StatusType* status, unsigned pos) = 0;
 	};
 
 	template <typename Name, typename StatusType, typename Base>
@@ -8949,6 +9435,7 @@ namespace Firebird
 					this->setIdleTimeout = &Name::cloopsetIdleTimeoutDispatcher;
 					this->getStatementTimeout = &Name::cloopgetStatementTimeoutDispatcher;
 					this->setStatementTimeout = &Name::cloopsetStatementTimeoutDispatcher;
+					this->createBatch = &Name::cloopcreateBatchDispatcher;
 				}
 			} vTable;
 
@@ -9275,6 +9762,21 @@ namespace Firebird
 			}
 		}
 
+		static IBatch* CLOOP_CARG cloopcreateBatchDispatcher(IAttachment* self, IStatus* status, unsigned stmtLength, const char* sqlStmt, unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				return static_cast<Name*>(self)->Name::createBatch(&status2, stmtLength, sqlStmt, dialect, inMetadata, parLength, par);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+				return static_cast<IBatch*>(0);
+			}
+		}
+
 		static void CLOOP_CARG cloopaddRefDispatcher(IReferenceCounted* self) throw()
 		{
 			try
@@ -9336,6 +9838,7 @@ namespace Firebird
 		virtual void setIdleTimeout(StatusType* status, unsigned timeOut) = 0;
 		virtual unsigned getStatementTimeout(StatusType* status) = 0;
 		virtual void setStatementTimeout(StatusType* status, unsigned timeOut) = 0;
+		virtual IBatch* createBatch(StatusType* status, unsigned stmtLength, const char* sqlStmt, unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par) = 0;
 	};
 
 	template <typename Name, typename StatusType, typename Base>

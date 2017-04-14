@@ -39,6 +39,20 @@
 struct dsc;
 struct PerformanceInfo;
 
+namespace Firebird
+{
+	struct BlobStream
+	{
+		union
+		{
+			ISC_QUAD* idPtr;
+			ISC_QUAD blobId;
+		};
+		ULONG blobSize;
+		UCHAR body[1];
+	};
+}
+
 #include "IdlFbInterfaces.h"
 
 namespace Firebird

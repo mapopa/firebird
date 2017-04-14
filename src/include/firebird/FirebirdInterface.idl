@@ -29,6 +29,7 @@
 typedef ISC_DATE;
 typedef ISC_QUAD;
 typedef ISC_TIME;
+struct BlobStream;
 
 // Versioned interface - base for all FB interfaces
 interface Versioned
@@ -424,6 +425,13 @@ interface Statement : ReferenceCounted
 	// Cursor flags.
 	const uint CURSOR_TYPE_SCROLLABLE 				= 0x01;
 
+	// Batch additional parameters
+	const uchar BATCH_MULTIERROR					= 1;
+	const uchar BATCH_RECORD_COUNTS					= 2;
+
+	// Pipe additional parameters
+	const uchar PIPE_BUFFER_SIZE					= 1;
+
 	void getInfo(Status status,
 								 uint itemsLength, const uchar* items,
 								 uint bufferLength, uchar* buffer);
@@ -444,8 +452,51 @@ version:	// 3.0 => 4.0
 	// Statement execution timeout, milliseconds
 	uint getTimeout(Status status);
 	void setTimeout(Status status, uint timeOut);
+
+	// Batch API
+	Batch createBatch(Status status, MessageMetadata inMetadata, uint parLength, const uchar* par);
+//	Pipe createPipe(Status status, Transaction transaction, MessageMetadata inMetadata,
+//		void* inBuffer, MessageMetadata outMetadata, uint parLength, const uchar* par);
 }
 
+interface Batch : ReferenceCounted
+{
+	const uchar MULTIERROR = 1;			// Can have >1 buffers with errors
+	const uchar RECORD_COUNTS = 2;		// Per-record modified records accountung
+	const uchar BUFFER_BYTES_SIZE = 3;	// Maximum possible buffer size
+	const uchar USER_BLOB_IDS = 4;		// User sets blob IDs for addBlobStream()/registerBlob()
+
+	void add(Status status, uint count, const void* inBuffer);
+	void addBlob(Status status, uint length, const void* inBuffer, ISC_QUAD* blobId);
+	void appendBlobData(Status status, uint length, const void* inBuffer);
+	void addBlobStream(Status status, uint length, const BlobStream* inBuffer);
+	void registerBlob(Status status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId);
+	BatchCompletionState execute(Status status, Transaction transaction);
+	void cancel(Status status);
+}
+
+interface BatchCompletionState : Disposable
+{
+	const int ERROR_STATE = -1;					// Error happened when processing record
+	const uint NO_MORE_ERRORS = 0xFFFFFFFF;		// Special value returned by findError()
+
+	uint getSize(Status status);
+	int getState(Status status, uint pos);
+	uint findError(Status status, uint pos);
+
+	// Depending upon returned value (true/false) status contains
+	// an error which took place when processing record number 'pos' (when true)
+	// or an error that was thrown during method execution (when false).
+	boolean getStatus(Status status, uint pos);
+}
+/*
+interface Pipe : ReferenceCounted
+{
+	uint add(Status status, uint count, void* inBuffer);
+	uint fetch(Status status, uint count, void* outBuffer);
+	void close(Status status);
+}
+*/
 interface Request : ReferenceCounted
 {
 	void receive(Status status, int level, uint msgType,
@@ -530,6 +581,13 @@ version:	// 3.0 => 4.0
 	// Statement execution timeout, milliseconds
 	uint getStatementTimeout(Status status);
 	void setStatementTimeout(Status status, uint timeOut);
+
+	// Batch API
+	Batch createBatch(Status status, uint stmtLength, const string sqlStmt, uint dialect,
+		MessageMetadata inMetadata, uint parLength, const uchar* par);
+/*	Pipe createPipe(Status status, uint stmtLength, const string sqlStmt, uint dialect,
+		Transaction transaction, MessageMetadata inMetadata, void* inBuffer,
+		MessageMetadata outMetadata, uint parLength, const uchar* par);*/
 }
 
 interface Service : ReferenceCounted
