@@ -82,7 +82,6 @@ static ULONG	get_request_info(thread_db*, dsql_req*, ULONG, UCHAR*);
 static dsql_dbb*	init(Jrd::thread_db*, Jrd::Attachment*);
 static void		map_in_out(Jrd::thread_db*, dsql_req*, bool, const dsql_msg*, IMessageMetadata*, UCHAR*,
 	const UCHAR* = NULL);
-static USHORT	parse_metadata(dsql_req*, IMessageMetadata*, const Array<dsql_par*>&);
 static dsql_req* prepareRequest(thread_db*, dsql_dbb*, jrd_tra*, ULONG, const TEXT*, USHORT, bool);
 static dsql_req* prepareStatement(thread_db*, dsql_dbb*, jrd_tra*, ULONG, const TEXT*, USHORT, bool);
 static UCHAR*	put_item(UCHAR, const USHORT, const UCHAR*, UCHAR*, const UCHAR* const);
@@ -212,12 +211,18 @@ DsqlCursor* DSQL_open(thread_db* tdbb,
 	if (!reqTypeWithCursor(statement->getType()))
 		Arg::Gds(isc_no_cursor).raise();
 
-	// Validate cursor being not already open
+	// Validate cursor or batch being not already open
 
 	if (request->req_cursor)
 	{
 		ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-502) <<
 				  Arg::Gds(isc_dsql_cursor_open_err));
+	}
+
+	if (request->req_batch)
+	{
+		ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-502) <<
+				  Arg::Gds(isc_random) << "Request has active batch");
 	}
 
 	request->req_transaction = *tra_handle;
@@ -721,7 +726,7 @@ void DsqlDmlRequest::execute(thread_db* tdbb, jrd_tra** traHandle,
 	}
 
 	if (outMetadata && message)
-		parse_metadata(this, outMetadata, message->msg_parameters);
+		parseMetadata(outMetadata, message->msg_parameters);
 
 	if ((outMsg && message) || isBlock)
 	{
@@ -1031,7 +1036,7 @@ static dsql_dbb* init(thread_db* tdbb, Jrd::Attachment* attachment)
 static void map_in_out(thread_db* tdbb, dsql_req* request, bool toExternal, const dsql_msg* message,
 	IMessageMetadata* meta, UCHAR* dsql_msg_buf, const UCHAR* in_dsql_msg_buf)
 {
-	USHORT count = parse_metadata(request, meta, message->msg_parameters);
+	USHORT count = request->parseMetadata(meta, message->msg_parameters);
 
 	// Sanity check
 
@@ -1230,8 +1235,7 @@ static void map_in_out(thread_db* tdbb, dsql_req* request, bool toExternal, cons
     @param parameters_list
 
  **/
-static USHORT parse_metadata(dsql_req* request, IMessageMetadata* meta,
-	const Array<dsql_par*>& parameters_list)
+USHORT dsql_req::parseMetadata(IMessageMetadata* meta, const Array<dsql_par*>& parameters_list)
 {
 	HalfStaticArray<const dsql_par*, 16> parameters;
 
@@ -1305,7 +1309,7 @@ static USHORT parse_metadata(dsql_req* request, IMessageMetadata* meta,
 		if (desc.isText() && desc.getTextType() == ttype_dynamic)
 			desc.setTextType(ttype_none);
 
-		request->req_user_descs.put(parameter, desc);
+		req_user_descs.put(parameter, desc);
 
 		dsql_par* null = parameter->par_null;
 		if (null)
@@ -1316,7 +1320,7 @@ static USHORT parse_metadata(dsql_req* request, IMessageMetadata* meta,
 			desc.dsc_length = sizeof(SSHORT);
 			desc.dsc_address = (UCHAR*)(IPTR) nullOffset;
 
-			request->req_user_descs.put(null, desc);
+			req_user_descs.put(null, desc);
 		}
 	}
 
@@ -1563,6 +1567,7 @@ dsql_req::dsql_req(MemoryPool& pool)
 	  req_msg_buffers(req_pool),
 	  req_cursor_name(req_pool),
 	  req_cursor(NULL),
+	  req_batch(NULL),
 	  req_user_descs(req_pool),
 	  req_traced(false),
 	  req_timeout(0)
@@ -1617,10 +1622,10 @@ void dsql_req::setTimeout(unsigned int timeOut)
 	req_timeout = timeOut;
 }
 
-void dsql_req::setupTimer(thread_db* tdbb)
+TimeoutTimer* dsql_req::setupTimer(thread_db* tdbb)
 {
 	if (statement->getFlags() & JrdStatement::FLAG_INTERNAL)
-		return;
+		return req_timer;
 
 	if (req_request)
 	{
@@ -1631,7 +1636,7 @@ void dsql_req::setupTimer(thread_db* tdbb)
 		{
 			if (req_timer)
 				req_timer->setup(0, 0);
-			return;
+			return req_timer;
 		}
 	}
 
@@ -1671,6 +1676,8 @@ void dsql_req::setupTimer(thread_db* tdbb)
 		req_timer->setup(timeOut, toutErr);
 		req_timer->start();
 	}
+
+	return req_timer;
 }
 
 // Release a dynamic request.
@@ -1706,6 +1713,12 @@ void dsql_req::destroy(thread_db* tdbb, dsql_req* request, bool drop)
 
 	if (request->req_cursor)
 		DsqlCursor::close(tdbb, request->req_cursor);
+
+	if (request->req_batch)
+	{
+		delete request->req_batch;
+		request->req_batch = nullptr;
+	}
 
 	Jrd::Attachment* att = request->req_dbb->dbb_attachment;
 	const bool need_trace_free = request->req_traced && TraceManager::need_dsql_free(att);

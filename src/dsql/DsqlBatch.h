@@ -26,9 +26,18 @@
 #include "../jrd/TempSpace.h"
 #include "../common/classes/alloc.h"
 
+
+namespace Firebird {
+
+class ClumpletReader;
+
+}
+
+
 namespace Jrd {
 
 class dsql_req;
+class dsql_msg;
 class thread_db;
 class JBatch;
 class Attachment;
@@ -36,7 +45,7 @@ class Attachment;
 class DsqlBatch
 {
 public:
-	DsqlBatch(dsql_req* req);
+	DsqlBatch(dsql_req* req, const dsql_msg* message, Firebird::ClumpletReader& pb);
 	~DsqlBatch();
 
 	static const unsigned RAM_BATCH = 128 * 1024;
@@ -62,20 +71,26 @@ private:
 	{
 	public:
 		DataCache(MemoryPool& p)
-			: PermanentStorage(p), m_cache(p), m_used(0)
+			: PermanentStorage(p), m_cache(p),
+			  m_used(0), m_got(0), m_limit(0)
 		{ }
+
+		void setBuf(FB_UINT64 size);
 
 		void put(const void* data, unsigned dataSize);
 		unsigned get(UCHAR** buffer);
+		void remained(unsigned size);
+		void clear();
 
 	private:
 		Firebird::Array<UCHAR> m_cache;
 		Firebird::AutoPtr<TempSpace> m_space;
-		FB_UINT64 m_used, m_got;
+		FB_UINT64 m_used, m_got, m_limit;
 	};
 
 	DataCache m_messages, m_blobs;
-	ULONG m_messageSize;
+	ULONG m_messageSize, m_flags;
+	FB_UINT64 m_bufferSize;
 };
 
 } // namespace

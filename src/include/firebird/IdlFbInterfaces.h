@@ -1747,6 +1747,8 @@ namespace Firebird
 	public:
 		static const unsigned VERSION = 3;
 
+		static const unsigned char VERSION1 = 1;
+		static const unsigned char CURRENT_VERSION = 1;
 		static const unsigned char MULTIERROR = 1;
 		static const unsigned char RECORD_COUNTS = 2;
 		static const unsigned char BUFFER_BYTES_SIZE = 3;

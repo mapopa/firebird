@@ -461,6 +461,9 @@ version:	// 3.0 => 4.0
 
 interface Batch : ReferenceCounted
 {
+	const uchar VERSION1 = 1;			// Tag for parameters block
+	const uchar CURRENT_VERSION = 1;	// Tag for parameters block
+
 	const uchar MULTIERROR = 1;			// Can have >1 buffers with errors
 	const uchar RECORD_COUNTS = 2;		// Per-record modified records accountung
 	const uchar BUFFER_BYTES_SIZE = 3;	// Maximum possible buffer size

@@ -48,8 +48,8 @@ namespace Firebird
 			ISC_QUAD* idPtr;
 			ISC_QUAD blobId;
 		};
-		ULONG blobSize;
-		UCHAR body[1];
+		unsigned int blobSize;
+		unsigned char body[1];
 	};
 }
 
