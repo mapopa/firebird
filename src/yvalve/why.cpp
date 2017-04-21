@@ -5800,15 +5800,20 @@ void YAttachment::setStatementTimeout(CheckStatusWrapper* status, unsigned int t
 }
 
 
-YBatch* YAttachment::createBatch(CheckStatusWrapper* status, unsigned stmtLength, const char* sqlStmt,
-	unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par)
+YBatch* YAttachment::createBatch(CheckStatusWrapper* status, ITransaction* transaction,
+	unsigned stmtLength, const char* sqlStmt, unsigned dialect,
+	IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par)
 {
 	try
 	{
 		YEntry<YAttachment> entry(status, this);
 
-		IBatch* batch = entry.next()->createBatch(status, stmtLength, sqlStmt, dialect, inMetadata,
-			parLength, par);
+		NextTransaction trans;
+		if (transaction)
+			getNextTransaction(status, transaction, trans);
+
+		IBatch* batch = entry.next()->createBatch(status, trans, stmtLength, sqlStmt, dialect,
+			inMetadata, parLength, par);
 		if (status->getState() & Firebird::IStatus::STATE_ERRORS)
 		{
 			return NULL;

@@ -25,6 +25,7 @@
 
 #include "../jrd/TempSpace.h"
 #include "../common/classes/alloc.h"
+#include "../common/classes/RefCounted.h"
 
 
 namespace Firebird {
@@ -45,12 +46,14 @@ class Attachment;
 class DsqlBatch
 {
 public:
-	DsqlBatch(dsql_req* req, const dsql_msg* message, Firebird::ClumpletReader& pb);
+	DsqlBatch(dsql_req* req, const dsql_msg* message, Firebird::IMessageMetadata* inMetadata,
+		Firebird::ClumpletReader& pb);
 	~DsqlBatch();
 
 	static const unsigned RAM_BATCH = 128 * 1024;
 
-	static DsqlBatch* open(thread_db* tdbb, dsql_req* req, Firebird::IMessageMetadata* inMetadata, unsigned parLength, const UCHAR* par);
+	static DsqlBatch* open(thread_db* tdbb, dsql_req* req, Firebird::IMessageMetadata* inMetadata,
+		unsigned parLength, const UCHAR* par);
 
 	Attachment* getAttachment() const;
 	void setInterfacePtr(JBatch* interfacePtr) throw();
@@ -66,6 +69,7 @@ public:
 private:
 	dsql_req* const m_request;
 	JBatch* m_batch;
+	Firebird::RefPtr<Firebird::IMessageMetadata> m_meta;
 
 	class DataCache : public Firebird::PermanentStorage
 	{
@@ -78,7 +82,7 @@ private:
 		void setBuf(FB_UINT64 size);
 
 		void put(const void* data, unsigned dataSize);
-		unsigned get(UCHAR** buffer);
+		unsigned get(const UCHAR** buffer);
 		void remained(unsigned size);
 		void clear();
 

@@ -2060,7 +2060,7 @@ namespace Firebird
 			void (CLOOP_CARG *setIdleTimeout)(IAttachment* self, IStatus* status, unsigned timeOut) throw();
 			unsigned (CLOOP_CARG *getStatementTimeout)(IAttachment* self, IStatus* status) throw();
 			void (CLOOP_CARG *setStatementTimeout)(IAttachment* self, IStatus* status, unsigned timeOut) throw();
-			IBatch* (CLOOP_CARG *createBatch)(IAttachment* self, IStatus* status, unsigned stmtLength, const char* sqlStmt, unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par) throw();
+			IBatch* (CLOOP_CARG *createBatch)(IAttachment* self, IStatus* status, ITransaction* transaction, unsigned stmtLength, const char* sqlStmt, unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par) throw();
 		};
 
 	protected:
@@ -2266,7 +2266,7 @@ namespace Firebird
 			StatusType::checkException(status);
 		}
 
-		template <typename StatusType> IBatch* createBatch(StatusType* status, unsigned stmtLength, const char* sqlStmt, unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par)
+		template <typename StatusType> IBatch* createBatch(StatusType* status, ITransaction* transaction, unsigned stmtLength, const char* sqlStmt, unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par)
 		{
 			if (cloopVTable->version < 4)
 			{
@@ -2275,7 +2275,7 @@ namespace Firebird
 				return 0;
 			}
 			StatusType::clearException(status);
-			IBatch* ret = static_cast<VTable*>(this->cloopVTable)->createBatch(this, status, stmtLength, sqlStmt, dialect, inMetadata, parLength, par);
+			IBatch* ret = static_cast<VTable*>(this->cloopVTable)->createBatch(this, status, transaction, stmtLength, sqlStmt, dialect, inMetadata, parLength, par);
 			StatusType::checkException(status);
 			return ret;
 		}
@@ -9764,13 +9764,13 @@ namespace Firebird
 			}
 		}
 
-		static IBatch* CLOOP_CARG cloopcreateBatchDispatcher(IAttachment* self, IStatus* status, unsigned stmtLength, const char* sqlStmt, unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par) throw()
+		static IBatch* CLOOP_CARG cloopcreateBatchDispatcher(IAttachment* self, IStatus* status, ITransaction* transaction, unsigned stmtLength, const char* sqlStmt, unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par) throw()
 		{
 			StatusType status2(status);
 
 			try
 			{
-				return static_cast<Name*>(self)->Name::createBatch(&status2, stmtLength, sqlStmt, dialect, inMetadata, parLength, par);
+				return static_cast<Name*>(self)->Name::createBatch(&status2, transaction, stmtLength, sqlStmt, dialect, inMetadata, parLength, par);
 			}
 			catch (...)
 			{
@@ -9840,7 +9840,7 @@ namespace Firebird
 		virtual void setIdleTimeout(StatusType* status, unsigned timeOut) = 0;
 		virtual unsigned getStatementTimeout(StatusType* status) = 0;
 		virtual void setStatementTimeout(StatusType* status, unsigned timeOut) = 0;
-		virtual IBatch* createBatch(StatusType* status, unsigned stmtLength, const char* sqlStmt, unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par) = 0;
+		virtual IBatch* createBatch(StatusType* status, ITransaction* transaction, unsigned stmtLength, const char* sqlStmt, unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par) = 0;
 	};
 
 	template <typename Name, typename StatusType, typename Base>

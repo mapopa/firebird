@@ -539,8 +539,9 @@ public:
 	unsigned int getStatementTimeout(CheckStatusWrapper* status);
 	void setStatementTimeout(CheckStatusWrapper* status, unsigned int timeOut);
 
-	IBatch* createBatch(Firebird::CheckStatusWrapper* status, unsigned stmtLength, const char* sqlStmt,
-		unsigned dialect, Firebird::IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par);
+	IBatch* createBatch(Firebird::CheckStatusWrapper* status, ITransaction* transaction,
+		unsigned stmtLength, const char* sqlStmt, unsigned dialect,
+		IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par);
 
 public:
 	Attachment(Rdb* handle, const PathName& path)
@@ -1862,8 +1863,9 @@ void Attachment::setStatementTimeout(CheckStatusWrapper* status, unsigned int ti
 }
 
 
-IBatch* Attachment::createBatch(CheckStatusWrapper* status, unsigned stmtLength, const char* sqlStmt,
-	unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par)
+IBatch* Attachment::createBatch(CheckStatusWrapper* status, ITransaction* transaction,
+	unsigned stmtLength, const char* sqlStmt, unsigned dialect,
+	IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par)
 {
 	try
 	{

@@ -26,6 +26,7 @@
 
 #include "../jrd/EngineInterface.h"
 #include "../jrd/jrd.h"
+#include "../jrd/status.h"
 #include "../jrd/exe_proto.h"
 #include "../dsql/dsql.h"
 #include "../dsql/errd_proto.h"
@@ -34,15 +35,19 @@
 using namespace Firebird;
 using namespace Jrd;
 
-DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, ClumpletReader& pb)
-	: m_request(req), m_batch(NULL),
+DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadata* inMeta, ClumpletReader& pb)
+	: m_request(req),
+	  m_batch(NULL),
+	  m_meta(inMeta),
 	  m_messages(req->getPool()),
 	  m_blobs(req->getPool()),
 	  m_messageSize(0),
 	  m_flags(0),
 	  m_bufferSize(10 * 1024 * 1024)
 {
-	m_messageSize = req->getStatement()->getSendMsg()->msg_length;
+	FbLocalStatus st;
+	m_messageSize = inMeta->getMessageLength(&st);
+	check(&st);
 
 	for (pb.rewind(); !pb.isEof(); pb.moveNext())
 	{
@@ -76,13 +81,10 @@ DsqlBatch::~DsqlBatch()
 {
 	if (m_batch)
 		m_batch->resetHandle();
+	if (m_request)
+		m_request->req_batch = NULL;
 }
-/*
-jrd_tra* DsqlBatch::getTransaction() const
-{
-	return m_request->req_transaction;
-}
-*/
+
 Attachment* DsqlBatch::getAttachment() const
 {
 	return m_request->req_dbb->dbb_attachment;
@@ -159,7 +161,7 @@ DsqlBatch* DsqlBatch::open(thread_db* tdbb, dsql_req* req, IMessageMetadata* inM
 
 	// Create batch
 
-	DsqlBatch* b = FB_NEW_POOL(req->getPool()) DsqlBatch(req, message, pb);
+	DsqlBatch* b = FB_NEW_POOL(req->getPool()) DsqlBatch(req, message, inMetadata, pb);
 	req->req_batch = b;
 	return b;
 }
@@ -208,21 +210,23 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 	EXE_start(tdbb, m_request->req_request, transaction);
 
 	const dsql_msg* message = m_request->getStatement()->getSendMsg();
-	fb_assert(message->msg_length == m_messageSize);
 	unsigned remains;
-	UCHAR* data;
+	const UCHAR* data;
 	while ((remains = m_messages.get(&data)) > 0)
 	{
 		while (remains >= m_messageSize)
 		{
 			// todo - translate blob IDs here
 
-			EXE_send(tdbb, m_request->req_request, message->msg_number, m_messageSize, data);
+			m_request->mapInOut(tdbb, false, message, m_meta, NULL, data);
+			UCHAR* msgBuffer = m_request->req_msg_buffers[message->msg_buffer_number];
+			EXE_send(tdbb, m_request->req_request, message->msg_number, message->msg_length, msgBuffer);
 
 			data += m_messageSize;
 			remains -= m_messageSize;
 		}
-		m_messages.remained(remains);
+		if (remains)
+			m_messages.remained(remains);
 	}
 
 	return NULL;
@@ -241,17 +245,30 @@ void DsqlBatch::DataCache::setBuf(FB_UINT64 size)
 
 void DsqlBatch::DataCache::put(const void* data, unsigned dataSize)
 {
-	if (m_used + dataSize + m_cache.getCount() > m_limit)
+	if (m_used + dataSize > m_limit)
 		ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
 			  Arg::Gds(isc_random) << "Internal buffer overflow - batch too big");
 
 	m_cache.append(reinterpret_cast<const UCHAR*>(data), dataSize);
+	m_used += dataSize;
 }
 
-unsigned DsqlBatch::DataCache::get(UCHAR** buffer)
+unsigned DsqlBatch::DataCache::get(const UCHAR** buffer)
 {
-	*buffer = m_cache.begin();
-	return m_cache.getCount();
+	if (!m_used)
+	{
+		*buffer = nullptr;
+		return 0;
+	}
+
+	if (m_used <= m_cache.getCount())
+	{
+		m_used = 0;
+		*buffer = m_cache.begin();
+		return m_cache.getCount();
+	}
+
+	fb_assert(false);
 }
 
 void DsqlBatch::DataCache::remained(unsigned size)

@@ -74,7 +74,7 @@ int main()
 
 		// create batch
 		const char* sqlStmt = "insert into country values(?, ?)";
-		batch = att->createBatch(&status, 0, sqlStmt, SAMPLES_DIALECT, msg.getMetadata(), 0, NULL);
+		batch = att->createBatch(&status, tra, 0, sqlStmt, SAMPLES_DIALECT, msg.getMetadata(), 0, NULL);
 
 		// fill batch with data
 		msg->country.set("Lemonia");

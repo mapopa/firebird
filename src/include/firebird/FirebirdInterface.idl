@@ -586,8 +586,8 @@ version:	// 3.0 => 4.0
 	void setStatementTimeout(Status status, uint timeOut);
 
 	// Batch API
-	Batch createBatch(Status status, uint stmtLength, const string sqlStmt, uint dialect,
-		MessageMetadata inMetadata, uint parLength, const uchar* par);
+	Batch createBatch(Status status, Transaction transaction, uint stmtLength, const string sqlStmt,
+		uint dialect, MessageMetadata inMetadata, uint parLength, const uchar* par);
 /*	Pipe createPipe(Status status, uint stmtLength, const string sqlStmt, uint dialect,
 		Transaction transaction, MessageMetadata inMetadata, void* inBuffer,
 		MessageMetadata outMetadata, uint parLength, const uchar* par);*/

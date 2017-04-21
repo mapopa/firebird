@@ -503,8 +503,9 @@ public:
 	void setIdleTimeout(Firebird::CheckStatusWrapper* status, unsigned int timeOut);
 	unsigned int getStatementTimeout(Firebird::CheckStatusWrapper* status);
 	void setStatementTimeout(Firebird::CheckStatusWrapper* status, unsigned int timeOut);
-	YBatch* createBatch(Firebird::CheckStatusWrapper* status, unsigned stmtLength, const char* sqlStmt,
-		unsigned dialect, Firebird::IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par);
+	YBatch* createBatch(Firebird::CheckStatusWrapper* status, Firebird::ITransaction* transaction,
+		unsigned stmtLength, const char* sqlStmt, unsigned dialect,
+		Firebird::IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par);
 
 public:
 	Firebird::IProvider* provider;

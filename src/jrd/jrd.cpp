@@ -4776,10 +4776,12 @@ ITransaction* JAttachment::execute(CheckStatusWrapper* user_status, ITransaction
 }
 
 
-IBatch* JAttachment::createBatch(CheckStatusWrapper* status, unsigned stmtLength, const char* sqlStmt,
-	unsigned dialect, IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par)
+IBatch* JAttachment::createBatch(CheckStatusWrapper* status, ITransaction* transaction,
+	unsigned stmtLength, const char* sqlStmt, unsigned dialect,
+	IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par)
 {
-	RefPtr<IStatement> tmpStatement(REF_NO_INCR, prepare(status, NULL, stmtLength, sqlStmt, dialect, 0));
+	RefPtr<IStatement> tmpStatement(REF_NO_INCR, prepare(status, transaction, stmtLength, sqlStmt,
+		dialect, 0));
 	if (status->getState() & IStatus::STATE_ERRORS)
 	{
 		return NULL;
