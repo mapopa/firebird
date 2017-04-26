@@ -1162,12 +1162,21 @@ ISC_STATUS transliterateException(thread_db* tdbb, const Exception& ex, FbStatus
 		attachment->att_trace_manager->event_error(&conn, &traceStatus, func);
 	}
 
+	JRD_transliterate(tdbb, vector);
 
+	return vector->getErrors()[1];
+}
+
+
+// Transliterate status vector to the client charset.
+void JRD_transliterate(thread_db* tdbb, Firebird::IStatus* vector) throw()
+{
+	Jrd::Attachment* attachment = tdbb->getAttachment();
 	USHORT charSet;
 	if (!attachment || (charSet = attachment->att_client_charset) == CS_METADATA ||
 		charSet == CS_NONE)
 	{
-		return vector->getErrors()[1];
+		return;
 	}
 
 	const ISC_STATUS* const vectorStart = vector->getErrors();
@@ -1240,12 +1249,10 @@ ISC_STATUS transliterateException(thread_db* tdbb, const Exception& ex, FbStatus
 	}
 	catch (...)
 	{
-		ex.stuffException(vector);
-		return vector->getErrors()[1];
+		return;
 	}
 
 	vector->setErrors2(newVector.getCount() - 1, newVector.begin());
-	return vector->getErrors()[1];
 }
 
 

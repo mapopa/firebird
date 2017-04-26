@@ -69,6 +69,7 @@
 #include "../common/classes/init.h"
 #include "../common/utils_proto.h"
 #include "../common/StatusArg.h"
+#include "../dsql/DsqlBatch.h"
 
 #ifdef HAVE_CTYPE_H
 #include <ctype.h>

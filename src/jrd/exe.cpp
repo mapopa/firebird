@@ -1230,6 +1230,12 @@ static void stuff_stack_trace(const jrd_req* request)
 }
 
 
+namespace Jrd
+{
+bool treePrt = false;
+}
+
+
 const StmtNode* EXE_looper(thread_db* tdbb, jrd_req* request, const StmtNode* node)
 {
 /**************************************
@@ -1268,6 +1274,21 @@ const StmtNode* EXE_looper(thread_db* tdbb, jrd_req* request, const StmtNode* no
 
 	const JrdStatement* statement = request->getStatement();
 
+	class StdErrPrn : public NodePrinter
+	{
+	public:
+		~StdErrPrn()
+		{
+		/*	if (treePrt)
+			{
+				const string& t = getText();
+				fwrite(t.c_str(), 1, t.length(), stderr);
+				fflush(stderr);
+			}*/
+		}
+	};
+	StdErrPrn prn;
+
 	while (node && !(request->req_flags & req_stall))
 	{
 		try
@@ -1284,6 +1305,11 @@ const StmtNode* EXE_looper(thread_db* tdbb, jrd_req* request, const StmtNode* no
 				}
 			}
 
+			const char* nm = node->internalPrint(prn).c_str();
+			if (treePrt)
+			{
+				fprintf(stderr, "%p %1d %03x %d %s\n", node, request->req_operation, request->req_flags, request->req_batch, nm);
+			}
 			node = node->execute(tdbb, request, &exeState);
 
 			if (exeState.exit)

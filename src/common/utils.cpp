@@ -1169,7 +1169,7 @@ unsigned int mergeStatus(ISC_STATUS* const dest, unsigned int space,
 	return copied;
 }
 
-void copyStatus(Firebird::CheckStatusWrapper* to, const Firebird::CheckStatusWrapper* from) throw()
+void copyStatus(Firebird::CheckStatusWrapper* to, const Firebird::IStatus* from) throw()
 {
 	to->init();
 

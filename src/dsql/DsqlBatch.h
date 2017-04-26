@@ -26,6 +26,7 @@
 #include "../jrd/TempSpace.h"
 #include "../common/classes/alloc.h"
 #include "../common/classes/RefCounted.h"
+#include "../common/classes/vector.h"
 
 
 namespace Firebird {
@@ -50,7 +51,15 @@ public:
 		Firebird::ClumpletReader& pb);
 	~DsqlBatch();
 
-	static const unsigned RAM_BATCH = 128 * 1024;
+#ifdef DEV_BUILD
+	static const ULONG RAM_BATCH = 256;
+	static const ULONG BUFFER_LIMIT = 2 * 1024;
+	static const ULONG DETAILED_LIMIT = 4;
+#else // DEV_BUILD
+	static const ULONG RAM_BATCH = 128 * 1024;
+	static const ULONG BUFFER_LIMIT = 10 * 1024 * 1024;
+	static const ULONG DETAILED_LIMIT = 64;
+#endif // DEV_BUILD
 
 	static DsqlBatch* open(thread_db* tdbb, dsql_req* req, Firebird::IMessageMetadata* inMetadata,
 		unsigned parLength, const UCHAR* par);
@@ -58,9 +67,9 @@ public:
 	Attachment* getAttachment() const;
 	void setInterfacePtr(JBatch* interfacePtr) throw();
 
-	void add(thread_db* tdbb, unsigned count, const void* inBuffer);
-	void addBlob(thread_db* tdbb, unsigned length, const void* inBuffer, ISC_QUAD* blobId);
-	void appendBlobData(thread_db* tdbb, unsigned length, const void* inBuffer);
+	void add(thread_db* tdbb, ULONG count, const void* inBuffer);
+	void addBlob(thread_db* tdbb, ULONG length, const void* inBuffer, ISC_QUAD* blobId);
+	void appendBlobData(thread_db* tdbb, ULONG length, const void* inBuffer);
 	void addBlobStream(thread_db* tdbb, uint length, const Firebird::BlobStream* inBuffer);
 	void registerBlob(thread_db* tdbb, const ISC_QUAD* existingBlob, ISC_QUAD* blobId);
 	Firebird::IBatchCompletionState* execute(thread_db* tdbb);
@@ -75,26 +84,29 @@ private:
 	{
 	public:
 		DataCache(MemoryPool& p)
-			: PermanentStorage(p), m_cache(p),
+			: PermanentStorage(p),
 			  m_used(0), m_got(0), m_limit(0)
 		{ }
 
-		void setBuf(FB_UINT64 size);
+		void setBuf(ULONG size);
 
-		void put(const void* data, unsigned dataSize);
-		unsigned get(const UCHAR** buffer);
-		void remained(unsigned size);
+		void put(const void* data, ULONG dataSize);
+		bool done();
+		ULONG get(const UCHAR** buffer);
+		void remained(ULONG size);
+		ULONG left(ULONG size);
 		void clear();
 
 	private:
-		Firebird::Array<UCHAR> m_cache;
+		typedef Firebird::Vector<UCHAR, DsqlBatch::RAM_BATCH> Cache;
+		Firebird::AutoPtr<Cache> m_cache;
 		Firebird::AutoPtr<TempSpace> m_space;
-		FB_UINT64 m_used, m_got, m_limit;
+		ULONG m_used, m_got, m_limit;
 	};
 
 	DataCache m_messages, m_blobs;
-	ULONG m_messageSize, m_flags;
-	FB_UINT64 m_bufferSize;
+	ULONG m_messageSize, m_flags, m_detailed, m_bufferSize;
+	bool m_hasBlob;
 };
 
 } // namespace

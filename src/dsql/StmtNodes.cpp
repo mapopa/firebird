@@ -6402,6 +6402,11 @@ const StmtNode* ReceiveNode::execute(thread_db* /*tdbb*/, jrd_req* request, ExeS
 {
 	switch (request->req_operation)
 	{
+		case jrd_req::req_return:
+			if (!request->req_batch)
+				break;
+			// fall into
+
 		case jrd_req::req_evaluate:
 			request->req_operation = jrd_req::req_receive;
 			request->req_message = message;
@@ -6413,8 +6418,9 @@ const StmtNode* ReceiveNode::execute(thread_db* /*tdbb*/, jrd_req* request, ExeS
 			return statement;
 
 		default:
-			return parentStmt;
+			break;
 	}
+	return parentStmt;
 }
 
 

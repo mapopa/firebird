@@ -58,12 +58,17 @@ int main()
 	IAttachment* att = NULL;
 	ITransaction* tra = NULL;
 	IBatch* batch = NULL;
+	IBatchCompletionState* cs = NULL;
 
 	try
 	{
 		// attach employee db
 		att = prov->attachDatabase(&status, "employee", 0, NULL);
 		tra = att->startTransaction(&status, 0, NULL);
+
+		// cleanup
+		att->execute(&status, tra, 0, "delete from country where currency='lim'", SAMPLES_DIALECT,
+			NULL, NULL, NULL, NULL);
 
 		// Message to store in a table
 		FB_MESSAGE(Msg, ThrowStatusWrapper,
@@ -81,8 +86,13 @@ int main()
 		msg->currency.set("lim");
 		batch->add(&status, 1, msg.getData());
 
+		msg->country.set("Banania");
+		msg->currency.set("lim");
+		batch->add(&status, 1, msg.getData());
+
 		// and execute it
-		batch->execute(&status, tra);
+		cs = batch->execute(&status, tra);
+		printf("upcount=%d\n", cs->getSize(&status));
 
 		// cleanup
 		batch->release();
@@ -100,6 +110,8 @@ int main()
 	}
 
 	// release interfaces after error caught
+	if (cs)
+		cs->dispose();
 	if (batch)
 		batch->release();
 	if (tra)

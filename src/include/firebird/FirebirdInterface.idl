@@ -425,13 +425,6 @@ interface Statement : ReferenceCounted
 	// Cursor flags.
 	const uint CURSOR_TYPE_SCROLLABLE 				= 0x01;
 
-	// Batch additional parameters
-	const uchar BATCH_MULTIERROR					= 1;
-	const uchar BATCH_RECORD_COUNTS					= 2;
-
-	// Pipe additional parameters
-	const uchar PIPE_BUFFER_SIZE					= 1;
-
 	void getInfo(Status status,
 								 uint itemsLength, const uchar* items,
 								 uint bufferLength, uchar* buffer);
@@ -468,6 +461,7 @@ interface Batch : ReferenceCounted
 	const uchar RECORD_COUNTS = 2;		// Per-record modified records accountung
 	const uchar BUFFER_BYTES_SIZE = 3;	// Maximum possible buffer size
 	const uchar USER_BLOB_IDS = 4;		// User sets blob IDs for addBlobStream()/registerBlob()
+	const uchar DETAILED_ERRORS = 5;	// How many vectors with detailed error info are stored
 
 	void add(Status status, uint count, const void* inBuffer);
 	void addBlob(Status status, uint length, const void* inBuffer, ISC_QUAD* blobId);
@@ -480,7 +474,8 @@ interface Batch : ReferenceCounted
 
 interface BatchCompletionState : Disposable
 {
-	const int ERROR_STATE = -1;					// Error happened when processing record
+	const int EXECUTE_FAILED = -1;				// Error happened when processing record
+	const int SUCCESS_NO_INFO = -2;				// Record update info was not collected
 	const uint NO_MORE_ERRORS = 0xFFFFFFFF;		// Special value returned by findError()
 
 	uint getSize(Status status);

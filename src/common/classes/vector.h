@@ -85,6 +85,14 @@ public:
 		return &data[index];
 	}
 
+	T* removeCount(const FB_SIZE_T index, const FB_SIZE_T n) throw()
+	{
+  		fb_assert(index + n <= count);
+  		memmove(data + index, data + index + n, sizeof(T) * (count - index - n));
+		count -= n;
+		return &data[index];
+	}
+
 	void shrink(FB_SIZE_T newCount) throw()
 	{
 		fb_assert(newCount <= count);
@@ -117,6 +125,20 @@ public:
 		count--;
 		return data[count];
 	}
+
+	void push(const T* items, const FB_SIZE_T itemsSize)
+	{
+		fb_assert(count <= FB_MAX_SIZEOF - itemsSize);
+		fb_assert(count + itemsSize <= Capacity);
+		memcpy(data + count, items, sizeof(T) * itemsSize);
+		count += itemsSize;
+	}
+
+	void append(const T* items, const FB_SIZE_T itemsSize)
+	{
+		push(items, itemsSize);
+	}
+
 
 	// This method only assigns "pos" if the element is found.
 	// Maybe we should modify it to iterate directy with "pos".

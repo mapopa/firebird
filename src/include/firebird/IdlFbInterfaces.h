@@ -1589,9 +1589,6 @@ namespace Firebird
 		static const unsigned FLAG_HAS_CURSOR = 1;
 		static const unsigned FLAG_REPEAT_EXECUTE = 2;
 		static const unsigned CURSOR_TYPE_SCROLLABLE = 1;
-		static const unsigned char BATCH_MULTIERROR = 1;
-		static const unsigned char BATCH_RECORD_COUNTS = 2;
-		static const unsigned char PIPE_BUFFER_SIZE = 1;
 
 		template <typename StatusType> void getInfo(StatusType* status, unsigned itemsLength, const unsigned char* items, unsigned bufferLength, unsigned char* buffer)
 		{
@@ -1753,6 +1750,7 @@ namespace Firebird
 		static const unsigned char RECORD_COUNTS = 2;
 		static const unsigned char BUFFER_BYTES_SIZE = 3;
 		static const unsigned char USER_BLOB_IDS = 4;
+		static const unsigned char DETAILED_ERRORS = 5;
 
 		template <typename StatusType> void add(StatusType* status, unsigned count, const void* inBuffer)
 		{
@@ -1829,7 +1827,8 @@ namespace Firebird
 	public:
 		static const unsigned VERSION = 3;
 
-		static const int ERROR_STATE = -1;
+		static const int EXECUTE_FAILED = -1;
+		static const int SUCCESS_NO_INFO = -2;
 		static const unsigned NO_MORE_ERRORS = -1;
 
 		template <typename StatusType> unsigned getSize(StatusType* status)
