@@ -6350,14 +6350,16 @@ const StmtNode* PostEventNode::execute(thread_db* tdbb, jrd_req* request, ExeSta
 
 
 static RegisterNode<ReceiveNode> regReceiveNode(blr_receive);
+static RegisterNode<ReceiveNode> regReceiveNodeBatch(blr_receive_batch);
 
-DmlNode* ReceiveNode::parse(thread_db* tdbb, MemoryPool& pool, CompilerScratch* csb, const UCHAR /*blrOp*/)
+DmlNode* ReceiveNode::parse(thread_db* tdbb, MemoryPool& pool, CompilerScratch* csb, const UCHAR blrOp)
 {
 	ReceiveNode* node = FB_NEW_POOL(pool) ReceiveNode(pool);
 
 	USHORT n = csb->csb_blr_reader.getByte();
 	node->message = csb->csb_rpt[n].csb_message;
 	node->statement = PAR_parse_stmt(tdbb, csb);
+	node->batchFlag = (blrOp == blr_receive_batch);
 
 	return node;
 }
@@ -6373,6 +6375,7 @@ string ReceiveNode::internalPrint(NodePrinter& printer) const
 
 	NODE_PRINT(printer, statement);
 	NODE_PRINT(printer, message);
+	NODE_PRINT(printer, batchFlag);
 
 	return "ReceiveNode";
 }
@@ -6403,7 +6406,7 @@ const StmtNode* ReceiveNode::execute(thread_db* /*tdbb*/, jrd_req* request, ExeS
 	switch (request->req_operation)
 	{
 		case jrd_req::req_return:
-			if (!request->req_batch)
+			if (!(request->req_batch && batchFlag))
 				break;
 			// fall into
 

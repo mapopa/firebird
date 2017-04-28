@@ -106,9 +106,6 @@ namespace {
 		{
 			try
 			{
-				if (pos >= reccount)
-					(Arg::Gds(isc_random) << "Position is out of range").raise();
-
 				ULONG index = find(pos);
 				if (index < rare.getCount())
 					return rare[index].first;
@@ -120,7 +117,7 @@ namespace {
 			return NO_MORE_ERRORS;
 		}
 
-		FB_BOOLEAN getStatus(CheckStatusWrapper* status, unsigned pos)
+		void getStatus(CheckStatusWrapper* status, IStatus* to, unsigned pos)
 		{
 			try
 			{
@@ -131,17 +128,18 @@ namespace {
 				if (index < rare.getCount() && rare[index].first == pos)
 				{
 					if (rare[index].second)
-						fb_utils::copyStatus(status, rare[index].second);
+					{
+						CheckStatusWrapper w(to);
+						fb_utils::copyStatus(&w, rare[index].second);
+						return;
+					}
 					(Arg::Gds(isc_random) << "Detailed error info is missing in batch").raise();
 				}
-
-				return true;
 			}
 			catch (const Exception& ex)
 			{
 				ex.stuffException(status);
 			}
-			return false;
 		}
 
 		void dispose()
@@ -210,7 +208,7 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 		case IBatch::MULTIERROR:
 		case IBatch::RECORD_COUNTS:
 		case IBatch::USER_BLOB_IDS:
-			if (pb.getBoolean())
+			if (pb.getInt())
 				m_flags |= (1 << t);
 			else
 				m_flags &= ~(1 << t);
@@ -379,17 +377,14 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 	extern bool treePrt;
 	treePrt = true;
 
-	fprintf(stderr, "\n\n+++ Unwind\n\n");
-	EXE_unwind(tdbb, req);
-	fprintf(stderr, "\n\n+++ Start\n\n");
-	EXE_start(tdbb, req, transaction);
 
 	// prepare completion interface
 	AutoPtr<BatchCompletionState, SimpleDispose<BatchCompletionState> > completionState
 		(FB_NEW BatchCompletionState(m_flags & (1 << IBatch::RECORD_COUNTS), m_detailed));
-
 	AutoSetRestore<bool> batchFlag(&req->req_batch, true);
 	const dsql_msg* message = m_request->getStatement()->getSendMsg();
+	bool startRequest = true;
+
 	ULONG remains;
 	const UCHAR* data;
 	while ((remains = m_messages.get(&data)) > 0)
@@ -402,6 +397,15 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 
 		while (remains >= m_messageSize)
 		{
+			if (startRequest)
+			{
+				DEB_BATCH(fprintf(stderr, "\n\n+++ Unwind\n\n"));
+				EXE_unwind(tdbb, req);
+				DEB_BATCH(fprintf(stderr, "\n\n+++ Start\n\n"));
+				EXE_start(tdbb, req, transaction);
+				startRequest = false;
+			}
+
 			// todo - translate blob IDs here
 
 			m_request->mapInOut(tdbb, false, message, m_meta, NULL, data);
@@ -412,7 +416,7 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 //				req->req_batch = false;
 
 			UCHAR* msgBuffer = m_request->req_msg_buffers[message->msg_buffer_number];
-			fprintf(stderr, "\n\n+++ Send\n\n");
+			DEB_BATCH(fprintf(stderr, "\n\n+++ Send\n\n"));
 			try
 			{
 				ULONG before = req->req_records_inserted + req->req_records_updated +
@@ -426,9 +430,16 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 			{
 				FbLocalStatus status;
 				ex.stuffException(&status);
+				tdbb->tdbb_status_vector->init();
+
 				completionState->regError(tdbb, &status);
 				if (!(m_flags & (1 << IBatch::MULTIERROR)))
+				{
+					cancel(tdbb);
+					remains = 0;
 					break;
+				}
+				startRequest = true;
 			}
 		}
 		m_messages.remained(remains);
@@ -528,11 +539,12 @@ ULONG DsqlBatch::DataCache::get(const UCHAR** buffer)
 	if (m_used > m_got)
 	{
 		// get data from tempspace
-		ULONG delta = m_cache->getCapacity() - m_cache->getCount();
+		ULONG dlen = m_cache->getCount();
+		ULONG delta = m_cache->getCapacity() - dlen;
 		if (delta > m_used - m_got)
 			delta = m_used - m_got;
-		UCHAR* buf = m_cache->getBuffer(m_cache->getCount() + delta);
-		buf += m_cache->getCount();
+		UCHAR* buf = m_cache->getBuffer(dlen + delta);
+		buf += dlen;
 		const FB_UINT64 readBytes = m_space->read(m_got, buf, delta);
 		fb_assert(readBytes == delta);
 		m_got += delta;
@@ -570,7 +582,7 @@ ULONG DsqlBatch::DataCache::left(ULONG size)
 void DsqlBatch::DataCache::clear()
 {
 	m_cache->clear();
-	if (m_space)
+	if (m_space && m_used)
 		m_space->releaseSpace(0, m_used);
 	m_used = m_got = 0;
 }

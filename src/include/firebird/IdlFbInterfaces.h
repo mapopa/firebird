@@ -1811,7 +1811,7 @@ namespace Firebird
 			unsigned (CLOOP_CARG *getSize)(IBatchCompletionState* self, IStatus* status) throw();
 			int (CLOOP_CARG *getState)(IBatchCompletionState* self, IStatus* status, unsigned pos) throw();
 			unsigned (CLOOP_CARG *findError)(IBatchCompletionState* self, IStatus* status, unsigned pos) throw();
-			FB_BOOLEAN (CLOOP_CARG *getStatus)(IBatchCompletionState* self, IStatus* status, unsigned pos) throw();
+			void (CLOOP_CARG *getStatus)(IBatchCompletionState* self, IStatus* status, IStatus* to, unsigned pos) throw();
 		};
 
 	protected:
@@ -1855,12 +1855,11 @@ namespace Firebird
 			return ret;
 		}
 
-		template <typename StatusType> FB_BOOLEAN getStatus(StatusType* status, unsigned pos)
+		template <typename StatusType> void getStatus(StatusType* status, IStatus* to, unsigned pos)
 		{
 			StatusType::clearException(status);
-			FB_BOOLEAN ret = static_cast<VTable*>(this->cloopVTable)->getStatus(this, status, pos);
+			static_cast<VTable*>(this->cloopVTable)->getStatus(this, status, to, pos);
 			StatusType::checkException(status);
-			return ret;
 		}
 	};
 
@@ -4063,6 +4062,7 @@ namespace Firebird
 		static const unsigned SPB_ATTACH = 2;
 		static const unsigned SPB_START = 3;
 		static const unsigned TPB = 4;
+		static const unsigned BATCH = 5;
 
 		template <typename StatusType> void clear(StatusType* status)
 		{
@@ -8963,18 +8963,17 @@ namespace Firebird
 			}
 		}
 
-		static FB_BOOLEAN CLOOP_CARG cloopgetStatusDispatcher(IBatchCompletionState* self, IStatus* status, unsigned pos) throw()
+		static void CLOOP_CARG cloopgetStatusDispatcher(IBatchCompletionState* self, IStatus* status, IStatus* to, unsigned pos) throw()
 		{
 			StatusType status2(status);
 
 			try
 			{
-				return static_cast<Name*>(self)->Name::getStatus(&status2, pos);
+				static_cast<Name*>(self)->Name::getStatus(&status2, to, pos);
 			}
 			catch (...)
 			{
 				StatusType::catchException(&status2);
-				return static_cast<FB_BOOLEAN>(0);
 			}
 		}
 
@@ -9007,7 +9006,7 @@ namespace Firebird
 		virtual unsigned getSize(StatusType* status) = 0;
 		virtual int getState(StatusType* status, unsigned pos) = 0;
 		virtual unsigned findError(StatusType* status, unsigned pos) = 0;
-		virtual FB_BOOLEAN getStatus(StatusType* status, unsigned pos) = 0;
+		virtual void getStatus(StatusType* status, IStatus* to, unsigned pos) = 0;
 	};
 
 	template <typename Name, typename StatusType, typename Base>

@@ -28,6 +28,8 @@
 #include "../common/classes/RefCounted.h"
 #include "../common/classes/vector.h"
 
+#define DEB_BATCH(x)
+
 
 namespace Firebird {
 

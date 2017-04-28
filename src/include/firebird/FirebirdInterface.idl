@@ -485,7 +485,7 @@ interface BatchCompletionState : Disposable
 	// Depending upon returned value (true/false) status contains
 	// an error which took place when processing record number 'pos' (when true)
 	// or an error that was thrown during method execution (when false).
-	boolean getStatus(Status status, uint pos);
+	void getStatus(Status status, Status to, uint pos);
 }
 /*
 interface Pipe : ReferenceCounted
@@ -1054,6 +1054,7 @@ interface XpbBuilder : Disposable
 	const uint SPB_ATTACH = 2;
 	const uint SPB_START = 3;
 	const uint TPB = 4;
+	const uint BATCH = 5;
 
 	// removing data
 	void clear(Status status);

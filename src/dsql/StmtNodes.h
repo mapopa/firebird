@@ -1211,7 +1211,8 @@ public:
 	explicit ReceiveNode(MemoryPool& pool)
 		: TypedNode<StmtNode, StmtNode::TYPE_RECEIVE>(pool),
 		  statement(NULL),
-		  message(NULL)
+		  message(NULL),
+		  batchFlag(false)
 	{
 	}
 
@@ -1228,6 +1229,7 @@ public:
 public:
 	NestConst<StmtNode> statement;
 	NestConst<MessageNode> message;
+	bool batchFlag;
 };
 
 
