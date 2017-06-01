@@ -42,6 +42,8 @@ namespace {
 
 	const char* TEMP_NAME = "fb_batch";
 
+	const UCHAR blobParameters[] = {isc_bpb_version1, isc_bpb_type, 1, isc_bpb_type_stream};
+
 	class BatchCompletionState FB_FINAL :
     	public DisposeIface<Firebird::IBatchCompletionStateImpl<BatchCompletionState, CheckStatusWrapper> >
 	{
@@ -182,16 +184,22 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 	: m_request(req),
 	  m_batch(NULL),
 	  m_meta(inMeta),
-	  m_messages(req->getPool()),
-	  m_blobs(req->getPool()),
+	  m_messages(m_request->getPool()),
+	  m_blobs(m_request->getPool()),
+	  m_blobMap(m_request->getPool()),
+	  m_blobMeta(m_request->getPool()),
 	  m_messageSize(0),
 	  m_flags(0),
 	  m_detailed(DETAILED_LIMIT),
 	  m_bufferSize(BUFFER_LIMIT),
-	  m_hasBlob(false)
+	  m_lastBlob(MAX_ULONG),
+	  m_setBlobSize(false),
+	  m_blobPolicy(IBatch::BLOB_IDS_NONE)
 {
+	memset(&m_genId, 0, sizeof(m_genId));
+
 	FbLocalStatus st;
-	m_messageSize = inMeta->getMessageLength(&st);
+	m_messageSize = m_meta->getMessageLength(&st);
 	check(&st);
 
 	if (m_messageSize > RAM_BATCH)		// hops - message does not fit in our buffer
@@ -207,11 +215,24 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 		{
 		case IBatch::MULTIERROR:
 		case IBatch::RECORD_COUNTS:
-		case IBatch::USER_BLOB_IDS:
 			if (pb.getInt())
 				m_flags |= (1 << t);
 			else
 				m_flags &= ~(1 << t);
+			break;
+
+		case IBatch::BLOB_IDS:
+			m_blobPolicy = pb.getInt();
+			switch(m_blobPolicy)
+			{
+			case IBatch::BLOB_IDS_ENGINE:
+			case IBatch::BLOB_IDS_USER:
+			case IBatch::BLOB_IDS_STREAM:
+				break;
+			default:
+				m_blobPolicy = IBatch::BLOB_IDS_NONE;
+				break;
+			}
 			break;
 
 		case IBatch::DETAILED_ERRORS:
@@ -228,10 +249,32 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 		}
 	}
 
-	// todo - process message to find blobs in it
+	// parse message to detect blobs
+	unsigned fieldsCount = m_meta->getCount(&st);
+	check(&st);
+	for (unsigned i = 0; i < fieldsCount; ++i)
+	{
+		unsigned t = m_meta->getType(&st, i);
+		check(&st);
+		switch(t)
+		{
+		case SQL_BLOB:
+		case SQL_ARRAY:
+			{
+				BlobMeta bm;
+				bm.offset = m_meta->getOffset(&st, i);
+				check(&st);
+				bm.nullOffset = m_meta->getNullOffset(&st, i);
+				check(&st);
+				m_blobMeta.push(bm);
+			}
+			break;
+		}
+	}
 
+	// allocate data buffers
 	m_messages.setBuf(m_bufferSize);
-	if (m_hasBlob)
+	if (m_blobMeta.hasData())
 		m_blobs.setBuf(m_bufferSize);
 }
 
@@ -330,24 +373,114 @@ void DsqlBatch::add(thread_db* tdbb, ULONG count, const void* inBuffer)
 	m_messages.put(inBuffer, count * m_messageSize);
 }
 
+void DsqlBatch::blobCheckMeta()
+{
+	if (!m_blobMeta.hasData())
+	{
+		ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
+			Arg::Gds(isc_random) << "There are no blobs in associated statement");
+	}
+}
+
+void DsqlBatch::blobCheckMode(bool stream, const char* fname)
+{
+	blobCheckMeta();
+
+	switch(m_blobPolicy)
+	{
+	case IBatch::BLOB_IDS_ENGINE:
+	case IBatch::BLOB_IDS_USER:
+		if (!stream)
+			return;
+		break;
+	case IBatch::BLOB_IDS_STREAM:
+		if (stream)
+			return;
+		break;
+	}
+
+	ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
+		Arg::Gds(isc_random) << "This *** call can't be used with current blob policy");
+}
+
+void DsqlBatch::blobPrepare()
+{
+	// Store size of previous blob if it was changed by appendBlobData()
+	unsigned blobSize = m_blobs.getSize();
+	if (m_setBlobSize)
+	{
+		blobSize -= (m_lastBlob + SIZEOF_BLOB_HEAD);
+		m_blobs.put3(&blobSize, sizeof(blobSize), m_lastBlob + sizeof(ISC_QUAD));
+		m_setBlobSize = false;
+	}
+
+	// Align blob stream
+	unsigned align = m_blobs.getSize() % BLOB_STREAM_ALIGN;
+	if (align)
+	{
+		SINT64 zero = 0;
+		m_blobs.put(&zero, BLOB_STREAM_ALIGN - align);
+	}
+}
+
 void DsqlBatch::addBlob(thread_db* tdbb, ULONG length, const void* inBuffer, ISC_QUAD* blobId)
 {
-	Arg::Gds(isc_wish_list).raise();
+	blobCheckMode(false, "addBlob");
+	blobPrepare();
+
+	// Get ready to appendBlobData()
+	m_lastBlob = m_blobs.getSize();
+
+	// Generate auto blob ID if needed
+	if (m_blobPolicy == IBatch::BLOB_IDS_ENGINE)
+		genBlobId(blobId);
+
+	// Store header
+	m_blobs.put(blobId, sizeof(ISC_QUAD));
+	m_blobs.put(&length, sizeof(ULONG));
+
+	// Finally store user data
+	m_blobs.put(inBuffer, length);
 }
 
 void DsqlBatch::appendBlobData(thread_db* tdbb, ULONG length, const void* inBuffer)
 {
-	Arg::Gds(isc_wish_list).raise();
+	blobCheckMode(false, "addBlob");
+
+	if (m_lastBlob == MAX_ULONG)
+	{
+		ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
+			Arg::Gds(isc_random) << "appendBlobData() is used to append data to last blob "
+									"but no such blob was added to the batch");
+	}
+
+	m_setBlobSize = true;
+	m_blobs.put(inBuffer, length);
 }
 
-void DsqlBatch::addBlobStream(thread_db* tdbb, uint length, const Firebird::BlobStream* inBuffer)
+void DsqlBatch::addBlobStream(thread_db* tdbb, unsigned length, const void* inBuffer)
 {
-	Arg::Gds(isc_wish_list).raise();
+	blobCheckMode(true, "addBlob");
+
+	// We have no idea where is the last blob located in the stream
+	m_lastBlob = MAX_ULONG;
+
+	// store stream for further processing
+	m_blobs.put(inBuffer, length);
 }
 
 void DsqlBatch::registerBlob(thread_db* tdbb, const ISC_QUAD* existingBlob, ISC_QUAD* blobId)
 {
-	Arg::Gds(isc_wish_list).raise();
+	blobCheckMeta();
+
+	ISC_QUAD* idPtr = m_blobMap.put(*existingBlob);
+	if (!idPtr)
+	{
+		ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
+			Arg::Gds(isc_random) << "Repeated BlobId in registerBlob(): is ***");
+	}
+
+	*idPtr = *blobId;
 }
 
 Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
@@ -364,19 +497,103 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 	if (!m_messages.done())
 	{
 		ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
-			  Arg::Gds(isc_random) << "Empty Internal buffer overflow - batch too big");
+			  Arg::Gds(isc_random) << "Internal buffer overflow - batch too big");
 	}
 
-	// todo - insert blobs here
+	// insert blobs here
+	if (m_blobMeta.hasData())
+	{
+		// This code expects the following to work correctly
+		fb_assert(RAM_BATCH % BLOB_STREAM_ALIGN == 0);
+
+		if (!m_blobs.done())
+		{
+			ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
+				  Arg::Gds(isc_random) << "Internal buffer overflow - batch too big");
+		}
+
+		ULONG remains;
+		UCHAR* data;
+		ULONG currentBlobSize = 0;
+		ULONG byteCount = 0;
+		blb* blob = nullptr;
+		try
+		{
+			while ((remains = m_blobs.get(&data)) > 0)
+			{
+				while (remains)
+				{
+					// should we get next blob header
+					if (!currentBlobSize)
+					{
+						// skip alignment data
+						ULONG align = byteCount % BLOB_STREAM_ALIGN;
+						if (align)
+						{
+							align = BLOB_STREAM_ALIGN - align;
+							data += align;
+							byteCount += align;
+							remains -= align;
+							continue;
+						}
+
+						// safety check
+						if (remains < SIZEOF_BLOB_HEAD)
+						{
+							ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
+								Arg::Gds(isc_random) << "Internal error: useless data remained in batch BLOB buffer");
+						}
+
+						// parse blob header
+						ISC_QUAD* batchBlobId = reinterpret_cast<ISC_QUAD*>(data);
+						ULONG* blobSize = reinterpret_cast<ULONG*>(data + sizeof(ISC_QUAD));
+						currentBlobSize = *blobSize;
+						data += SIZEOF_BLOB_HEAD;
+						byteCount += SIZEOF_BLOB_HEAD;
+						remains -= SIZEOF_BLOB_HEAD;
+
+						// create blob
+						bid engineBlobId;
+						blob = blb::create2(tdbb, transaction, &engineBlobId, sizeof(blobParameters), blobParameters, true);
+						registerBlob(tdbb, batchBlobId, reinterpret_cast<ISC_QUAD*>(&engineBlobId));
+					}
+
+					// store data
+					ULONG dataSize = currentBlobSize;
+					if (dataSize > remains)
+						dataSize = remains;
+					blob->BLB_put_segment(tdbb, data, dataSize);
+
+					// account data portion
+					data += dataSize;
+					byteCount += dataSize;
+					remains -= dataSize;
+					currentBlobSize -= dataSize;
+					if (!currentBlobSize)
+					{
+						blob->BLB_close(tdbb);
+						blob = nullptr;
+					}
+				}
+				m_blobs.remained(0);
+			}
+
+			fb_assert(!blob);
+			if (blob)
+				blob->BLB_cancel(tdbb);
+		}
+		catch(const Exception&)
+		{
+			if (blob)
+				blob->BLB_cancel(tdbb);
+			throw;
+		}
+	}
 
 	// execute request
-	m_request->req_transaction = transaction;		// not sure really needed here...
+	m_request->req_transaction = transaction;
 	jrd_req* req = m_request->req_request;
 	fb_assert(req);
-
-	extern bool treePrt;
-	treePrt = true;
-
 
 	// prepare completion interface
 	AutoPtr<BatchCompletionState, SimpleDispose<BatchCompletionState> > completionState
@@ -386,7 +603,7 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 	bool startRequest = true;
 
 	ULONG remains;
-	const UCHAR* data;
+	UCHAR* data;
 	while ((remains = m_messages.get(&data)) > 0)
 	{
 		if (remains < m_messageSize)
@@ -406,14 +623,29 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 				startRequest = false;
 			}
 
-			// todo - translate blob IDs here
+			// translate blob IDs
+			for (unsigned i = 0; i < m_blobMeta.getCount(); ++i)
+			{
+				const SSHORT* nullFlag = reinterpret_cast<const SSHORT*>(&data[m_blobMeta[i].nullOffset]);
+				if (*nullFlag)
+					continue;
 
+				ISC_QUAD* id = reinterpret_cast<ISC_QUAD*>(&data[m_blobMeta[i].offset]);
+				ISC_QUAD newId;
+				if (!m_blobMap.get(*id, newId))
+				{
+					ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
+						Arg::Gds(isc_random) << "Unknown blob ID in the message: is ***");
+				}
+
+				m_blobMap.remove(*id);
+				*id = newId;
+			}
+
+			// map message to internal engine format
 			m_request->mapInOut(tdbb, false, message, m_meta, NULL, data);
 			data += m_messageSize;
 			remains -= m_messageSize;
-
-//			if (m_messages.left(remains) < m_messageSize)
-//				req->req_batch = false;
 
 			UCHAR* msgBuffer = m_request->req_msg_buffers[message->msg_buffer_number];
 			DEB_BATCH(fprintf(stderr, "\n\n+++ Send\n\n"));
@@ -454,8 +686,21 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 void DsqlBatch::cancel(thread_db* tdbb)
 {
 	m_messages.clear();
-	if (m_hasBlob)
+	if (m_blobMeta.hasData())
+	{
 		m_blobs.clear();
+		m_setBlobSize = false;
+		m_lastBlob = MAX_ULONG;
+		memset(&m_genId, 0, sizeof(m_genId));
+		m_blobMap.clear();
+	}
+}
+
+void DsqlBatch::genBlobId(ISC_QUAD* blobId)
+{
+	if (++m_genId.gds_quad_low == 0)
+		++m_genId.gds_quad_high;
+	memcpy(blobId, &m_genId, sizeof(m_genId));
 }
 
 void DsqlBatch::DataCache::setBuf(ULONG size)
@@ -465,6 +710,27 @@ void DsqlBatch::DataCache::setBuf(ULONG size)
 	// create ram cache
 	fb_assert(!m_cache);
 	m_cache = FB_NEW_POOL(getPool()) Cache;
+}
+
+void DsqlBatch::DataCache::put3(const void* data, ULONG dataSize, ULONG offset)
+{
+	// This assertion guarantees that data always fits as a whole into m_cache or m_space,
+	// never placed half in one storage, half - in another.
+	fb_assert((DsqlBatch::RAM_BATCH % dataSize == 0) && (offset % dataSize == 0));
+
+	if (offset >= m_used)
+	{
+		// data in cache
+		UCHAR* to = m_cache->begin();
+		to += (offset - m_used);
+		fb_assert(to < m_cache->end());
+		memcpy(to, data, dataSize);
+	}
+	else
+	{
+		const FB_UINT64 writtenBytes = m_space->write(offset, data, dataSize);
+		fb_assert(writtenBytes == dataSize);
+	}
 }
 
 void DsqlBatch::DataCache::put(const void* d, ULONG dataSize)
@@ -534,7 +800,7 @@ bool DsqlBatch::DataCache::done()
 	return true;
 }
 
-ULONG DsqlBatch::DataCache::get(const UCHAR** buffer)
+ULONG DsqlBatch::DataCache::get(UCHAR** buffer)
 {
 	if (m_used > m_got)
 	{
@@ -570,13 +836,11 @@ void DsqlBatch::DataCache::remained(ULONG size)
 		m_cache->removeCount(0, m_cache->getCount() - size);
 }
 
-ULONG DsqlBatch::DataCache::left(ULONG size)
+ULONG DsqlBatch::DataCache::getSize() const
 {
-	fb_assert(false); // todo	(or remove)
-	FB_UINT64 total = FB_UINT64(m_used) + size;
-	if (total > MAX_ULONG)
-		return MAX_ULONG;
-	return total;
+	fb_assert(m_cache);
+	fb_assert((MAX_ULONG - 1) - m_used > m_cache->getCount());
+	return m_used + m_cache->getCount();
 }
 
 void DsqlBatch::DataCache::clear()

@@ -41,16 +41,7 @@ struct PerformanceInfo;
 
 namespace Firebird
 {
-	struct BlobStream
-	{
-		union
-		{
-			ISC_QUAD* idPtr;
-			ISC_QUAD blobId;
-		};
-		unsigned int blobSize;
-		unsigned char body[1];
-	};
+	static const unsigned BLOB_STREAM_ALIGN = 4;
 }
 
 #include "IdlFbInterfaces.h"

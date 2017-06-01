@@ -27,6 +27,7 @@
 #include "../common/classes/alloc.h"
 #include "../common/classes/RefCounted.h"
 #include "../common/classes/vector.h"
+#include "../common/classes/GenericMap.h"
 
 #define DEB_BATCH(x)
 
@@ -62,6 +63,7 @@ public:
 	static const ULONG BUFFER_LIMIT = 10 * 1024 * 1024;
 	static const ULONG DETAILED_LIMIT = 64;
 #endif // DEV_BUILD
+	static const ULONG SIZEOF_BLOB_HEAD = sizeof(ISC_QUAD) + sizeof(ULONG);
 
 	static DsqlBatch* open(thread_db* tdbb, dsql_req* req, Firebird::IMessageMetadata* inMetadata,
 		unsigned parLength, const UCHAR* par);
@@ -72,12 +74,17 @@ public:
 	void add(thread_db* tdbb, ULONG count, const void* inBuffer);
 	void addBlob(thread_db* tdbb, ULONG length, const void* inBuffer, ISC_QUAD* blobId);
 	void appendBlobData(thread_db* tdbb, ULONG length, const void* inBuffer);
-	void addBlobStream(thread_db* tdbb, uint length, const Firebird::BlobStream* inBuffer);
+	void addBlobStream(thread_db* tdbb, uint length, const void* inBuffer);
 	void registerBlob(thread_db* tdbb, const ISC_QUAD* existingBlob, ISC_QUAD* blobId);
 	Firebird::IBatchCompletionState* execute(thread_db* tdbb);
 	void cancel(thread_db* tdbb);
 
 private:
+	void genBlobId(ISC_QUAD* blobId);
+	void blobPrepare();
+	void blobCheckMode(bool stream, const char* fname);
+	void blobCheckMeta();
+
 	dsql_req* const m_request;
 	JBatch* m_batch;
 	Firebird::RefPtr<Firebird::IMessageMetadata> m_meta;
@@ -93,10 +100,11 @@ private:
 		void setBuf(ULONG size);
 
 		void put(const void* data, ULONG dataSize);
+		void put3(const void* data, ULONG dataSize, ULONG offset);
 		bool done();
-		ULONG get(const UCHAR** buffer);
+		ULONG get(UCHAR** buffer);
 		void remained(ULONG size);
-		ULONG left(ULONG size);
+		ULONG getSize() const;
 		void clear();
 
 	private:
@@ -106,9 +114,27 @@ private:
 		ULONG m_used, m_got, m_limit;
 	};
 
+	struct BlobMeta
+	{
+		unsigned nullOffset, offset;
+	};
+
+	class QuadComparator
+	{
+	public:
+	    static bool greaterThan(const ISC_QUAD& i1, const ISC_QUAD& i2)
+    	{
+        	return memcmp(&i1, &i2, sizeof(ISC_QUAD)) > 0;
+	    }
+	};
+
 	DataCache m_messages, m_blobs;
-	ULONG m_messageSize, m_flags, m_detailed, m_bufferSize;
-	bool m_hasBlob;
+	Firebird::GenericMap<Firebird::Pair<Firebird::NonPooled<ISC_QUAD, ISC_QUAD> >, QuadComparator> m_blobMap;
+	Firebird::HalfStaticArray<BlobMeta, 4> m_blobMeta;
+	ISC_QUAD m_genId;
+	ULONG m_messageSize, m_flags, m_detailed, m_bufferSize, m_lastBlob;
+	bool m_setBlobSize;
+	UCHAR m_blobPolicy;
 };
 
 } // namespace

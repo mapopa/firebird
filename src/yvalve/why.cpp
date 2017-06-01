@@ -4840,7 +4840,7 @@ void YBatch::appendBlobData(CheckStatusWrapper* status, unsigned length, const v
 }
 
 
-void YBatch::addBlobStream(CheckStatusWrapper* status, uint length, const BlobStream* inBuffer)
+void YBatch::addBlobStream(CheckStatusWrapper* status, uint length, const void* inBuffer)
 {
 	try
 	{

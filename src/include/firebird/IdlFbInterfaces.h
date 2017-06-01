@@ -1725,7 +1725,7 @@ namespace Firebird
 			void (CLOOP_CARG *add)(IBatch* self, IStatus* status, unsigned count, const void* inBuffer) throw();
 			void (CLOOP_CARG *addBlob)(IBatch* self, IStatus* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId) throw();
 			void (CLOOP_CARG *appendBlobData)(IBatch* self, IStatus* status, unsigned length, const void* inBuffer) throw();
-			void (CLOOP_CARG *addBlobStream)(IBatch* self, IStatus* status, unsigned length, const BlobStream* inBuffer) throw();
+			void (CLOOP_CARG *addBlobStream)(IBatch* self, IStatus* status, unsigned length, const void* inBuffer) throw();
 			void (CLOOP_CARG *registerBlob)(IBatch* self, IStatus* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId) throw();
 			IBatchCompletionState* (CLOOP_CARG *execute)(IBatch* self, IStatus* status, ITransaction* transaction) throw();
 			void (CLOOP_CARG *cancel)(IBatch* self, IStatus* status) throw();
@@ -1749,8 +1749,12 @@ namespace Firebird
 		static const unsigned char MULTIERROR = 1;
 		static const unsigned char RECORD_COUNTS = 2;
 		static const unsigned char BUFFER_BYTES_SIZE = 3;
-		static const unsigned char USER_BLOB_IDS = 4;
+		static const unsigned char BLOB_IDS = 4;
 		static const unsigned char DETAILED_ERRORS = 5;
+		static const unsigned char BLOB_IDS_NONE = 0;
+		static const unsigned char BLOB_IDS_ENGINE = 1;
+		static const unsigned char BLOB_IDS_USER = 2;
+		static const unsigned char BLOB_IDS_STREAM = 3;
 
 		template <typename StatusType> void add(StatusType* status, unsigned count, const void* inBuffer)
 		{
@@ -1773,7 +1777,7 @@ namespace Firebird
 			StatusType::checkException(status);
 		}
 
-		template <typename StatusType> void addBlobStream(StatusType* status, unsigned length, const BlobStream* inBuffer)
+		template <typename StatusType> void addBlobStream(StatusType* status, unsigned length, const void* inBuffer)
 		{
 			StatusType::clearException(status);
 			static_cast<VTable*>(this->cloopVTable)->addBlobStream(this, status, length, inBuffer);
@@ -8789,7 +8793,7 @@ namespace Firebird
 			}
 		}
 
-		static void CLOOP_CARG cloopaddBlobStreamDispatcher(IBatch* self, IStatus* status, unsigned length, const BlobStream* inBuffer) throw()
+		static void CLOOP_CARG cloopaddBlobStreamDispatcher(IBatch* self, IStatus* status, unsigned length, const void* inBuffer) throw()
 		{
 			StatusType status2(status);
 
@@ -8888,7 +8892,7 @@ namespace Firebird
 		virtual void add(StatusType* status, unsigned count, const void* inBuffer) = 0;
 		virtual void addBlob(StatusType* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId) = 0;
 		virtual void appendBlobData(StatusType* status, unsigned length, const void* inBuffer) = 0;
-		virtual void addBlobStream(StatusType* status, unsigned length, const BlobStream* inBuffer) = 0;
+		virtual void addBlobStream(StatusType* status, unsigned length, const void* inBuffer) = 0;
 		virtual void registerBlob(StatusType* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId) = 0;
 		virtual IBatchCompletionState* execute(StatusType* status, ITransaction* transaction) = 0;
 		virtual void cancel(StatusType* status) = 0;
