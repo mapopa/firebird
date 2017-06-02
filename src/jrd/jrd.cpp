@@ -5663,6 +5663,12 @@ void JBatch::addBlobStream(CheckStatusWrapper* status, uint length, const void* 
 }
 
 
+unsigned JBatch::getBlobAlignment(CheckStatusWrapper*)
+{
+	return DsqlBatch::BLOB_STREAM_ALIGN;
+}
+
+
 void JBatch::registerBlob(CheckStatusWrapper* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId)
 {
 	try

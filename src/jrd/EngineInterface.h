@@ -195,6 +195,7 @@ public:
 	void registerBlob(Firebird::CheckStatusWrapper* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId);
 	Firebird::IBatchCompletionState* execute(Firebird::CheckStatusWrapper* status, Firebird::ITransaction* transaction);
 	void cancel(Firebird::CheckStatusWrapper* status);
+	unsigned getBlobAlignment(Firebird::CheckStatusWrapper* status);
 
 public:
 	JBatch(DsqlBatch* handle, JStatement* aStatement);

@@ -39,11 +39,6 @@
 struct dsc;
 struct PerformanceInfo;
 
-namespace Firebird
-{
-	static const unsigned BLOB_STREAM_ALIGN = 4;
-}
-
 #include "IdlFbInterfaces.h"
 
 namespace Firebird

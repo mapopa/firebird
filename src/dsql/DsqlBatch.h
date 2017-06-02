@@ -64,6 +64,7 @@ public:
 	static const ULONG DETAILED_LIMIT = 64;
 #endif // DEV_BUILD
 	static const ULONG SIZEOF_BLOB_HEAD = sizeof(ISC_QUAD) + sizeof(ULONG);
+	static const unsigned BLOB_STREAM_ALIGN = 4;
 
 	static DsqlBatch* open(thread_db* tdbb, dsql_req* req, Firebird::IMessageMetadata* inMetadata,
 		unsigned parLength, const UCHAR* par);

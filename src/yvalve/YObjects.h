@@ -350,6 +350,7 @@ public:
 	void addBlob(Firebird::CheckStatusWrapper* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId);
 	void appendBlobData(Firebird::CheckStatusWrapper* status, unsigned length, const void* inBuffer);
 	void addBlobStream(Firebird::CheckStatusWrapper* status, uint length, const void* inBuffer);
+	unsigned getBlobAlignment(Firebird::CheckStatusWrapper* status);
 	void registerBlob(Firebird::CheckStatusWrapper* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId);
 	Firebird::IBatchCompletionState* execute(Firebird::CheckStatusWrapper* status, Firebird::ITransaction* transaction);
 	void cancel(Firebird::CheckStatusWrapper* status);

@@ -1185,6 +1185,8 @@ namespace Firebird
 			unsigned (CLOOP_CARG *getNullOffset)(IMessageMetadata* self, IStatus* status, unsigned index) throw();
 			IMetadataBuilder* (CLOOP_CARG *getBuilder)(IMessageMetadata* self, IStatus* status) throw();
 			unsigned (CLOOP_CARG *getMessageLength)(IMessageMetadata* self, IStatus* status) throw();
+			unsigned (CLOOP_CARG *getAlignment)(IMessageMetadata* self, IStatus* status) throw();
+			unsigned (CLOOP_CARG *getAlignedLength)(IMessageMetadata* self, IStatus* status) throw();
 		};
 
 	protected:
@@ -1198,7 +1200,7 @@ namespace Firebird
 		}
 
 	public:
-		static const unsigned VERSION = 3;
+		static const unsigned VERSION = 4;
 
 		template <typename StatusType> unsigned getCount(StatusType* status)
 		{
@@ -1316,6 +1318,34 @@ namespace Firebird
 		{
 			StatusType::clearException(status);
 			unsigned ret = static_cast<VTable*>(this->cloopVTable)->getMessageLength(this, status);
+			StatusType::checkException(status);
+			return ret;
+		}
+
+		template <typename StatusType> unsigned getAlignment(StatusType* status)
+		{
+			if (cloopVTable->version < 4)
+			{
+				StatusType::setVersionError(status, "IMessageMetadata", cloopVTable->version, 4);
+				StatusType::checkException(status);
+				return 0;
+			}
+			StatusType::clearException(status);
+			unsigned ret = static_cast<VTable*>(this->cloopVTable)->getAlignment(this, status);
+			StatusType::checkException(status);
+			return ret;
+		}
+
+		template <typename StatusType> unsigned getAlignedLength(StatusType* status)
+		{
+			if (cloopVTable->version < 4)
+			{
+				StatusType::setVersionError(status, "IMessageMetadata", cloopVTable->version, 4);
+				StatusType::checkException(status);
+				return 0;
+			}
+			StatusType::clearException(status);
+			unsigned ret = static_cast<VTable*>(this->cloopVTable)->getAlignedLength(this, status);
 			StatusType::checkException(status);
 			return ret;
 		}
@@ -1729,6 +1759,7 @@ namespace Firebird
 			void (CLOOP_CARG *registerBlob)(IBatch* self, IStatus* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId) throw();
 			IBatchCompletionState* (CLOOP_CARG *execute)(IBatch* self, IStatus* status, ITransaction* transaction) throw();
 			void (CLOOP_CARG *cancel)(IBatch* self, IStatus* status) throw();
+			unsigned (CLOOP_CARG *getBlobAlignment)(IBatch* self, IStatus* status) throw();
 		};
 
 	protected:
@@ -1804,6 +1835,14 @@ namespace Firebird
 			StatusType::clearException(status);
 			static_cast<VTable*>(this->cloopVTable)->cancel(this, status);
 			StatusType::checkException(status);
+		}
+
+		template <typename StatusType> unsigned getBlobAlignment(StatusType* status)
+		{
+			StatusType::clearException(status);
+			unsigned ret = static_cast<VTable*>(this->cloopVTable)->getBlobAlignment(this, status);
+			StatusType::checkException(status);
+			return ret;
 		}
 	};
 
@@ -7669,6 +7708,8 @@ namespace Firebird
 					this->getNullOffset = &Name::cloopgetNullOffsetDispatcher;
 					this->getBuilder = &Name::cloopgetBuilderDispatcher;
 					this->getMessageLength = &Name::cloopgetMessageLengthDispatcher;
+					this->getAlignment = &Name::cloopgetAlignmentDispatcher;
+					this->getAlignedLength = &Name::cloopgetAlignedLengthDispatcher;
 				}
 			} vTable;
 
@@ -7900,6 +7941,36 @@ namespace Firebird
 			}
 		}
 
+		static unsigned CLOOP_CARG cloopgetAlignmentDispatcher(IMessageMetadata* self, IStatus* status) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				return static_cast<Name*>(self)->Name::getAlignment(&status2);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+				return static_cast<unsigned>(0);
+			}
+		}
+
+		static unsigned CLOOP_CARG cloopgetAlignedLengthDispatcher(IMessageMetadata* self, IStatus* status) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				return static_cast<Name*>(self)->Name::getAlignedLength(&status2);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+				return static_cast<unsigned>(0);
+			}
+		}
+
 		static void CLOOP_CARG cloopaddRefDispatcher(IReferenceCounted* self) throw()
 		{
 			try
@@ -7954,6 +8025,8 @@ namespace Firebird
 		virtual unsigned getNullOffset(StatusType* status, unsigned index) = 0;
 		virtual IMetadataBuilder* getBuilder(StatusType* status) = 0;
 		virtual unsigned getMessageLength(StatusType* status) = 0;
+		virtual unsigned getAlignment(StatusType* status) = 0;
+		virtual unsigned getAlignedLength(StatusType* status) = 0;
 	};
 
 	template <typename Name, typename StatusType, typename Base>
@@ -8745,6 +8818,7 @@ namespace Firebird
 					this->registerBlob = &Name::cloopregisterBlobDispatcher;
 					this->execute = &Name::cloopexecuteDispatcher;
 					this->cancel = &Name::cloopcancelDispatcher;
+					this->getBlobAlignment = &Name::cloopgetBlobAlignmentDispatcher;
 				}
 			} vTable;
 
@@ -8850,6 +8924,21 @@ namespace Firebird
 			}
 		}
 
+		static unsigned CLOOP_CARG cloopgetBlobAlignmentDispatcher(IBatch* self, IStatus* status) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				return static_cast<Name*>(self)->Name::getBlobAlignment(&status2);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+				return static_cast<unsigned>(0);
+			}
+		}
+
 		static void CLOOP_CARG cloopaddRefDispatcher(IReferenceCounted* self) throw()
 		{
 			try
@@ -8896,6 +8985,7 @@ namespace Firebird
 		virtual void registerBlob(StatusType* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId) = 0;
 		virtual IBatchCompletionState* execute(StatusType* status, ITransaction* transaction) = 0;
 		virtual void cancel(StatusType* status) = 0;
+		virtual unsigned getBlobAlignment(StatusType* status) = 0;
 	};
 
 	template <typename Name, typename StatusType, typename Base>

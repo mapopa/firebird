@@ -362,6 +362,10 @@ interface MessageMetadata : ReferenceCounted
 
 	MetadataBuilder getBuilder(Status status);
 	uint getMessageLength(Status status);
+
+version:	// 3.0 => 4.0
+	uint getAlignment(Status status);
+	uint getAlignedLength(Status status);
 }
 
 interface MetadataBuilder : ReferenceCounted
@@ -474,6 +478,7 @@ interface Batch : ReferenceCounted
 	void registerBlob(Status status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId);
 	BatchCompletionState execute(Status status, Transaction transaction);
 	void cancel(Status status);
+	uint getBlobAlignment(Status status);
 }
 
 interface BatchCompletionState : Disposable

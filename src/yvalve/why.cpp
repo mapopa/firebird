@@ -148,6 +148,8 @@ public:
 
 	IMetadataBuilder* getBuilder(CheckStatusWrapper* status);
 	unsigned getMessageLength(CheckStatusWrapper* status);
+	unsigned getAlignment(CheckStatusWrapper* status);
+	unsigned getAlignedLength(CheckStatusWrapper* status);
 
 	void gatherData(DataBuffer& to);	// Copy data from SQLDA into target buffer.
 	void scatterData(DataBuffer& from);
@@ -170,7 +172,7 @@ private:
 		unsigned indOffset;
 	} *offsets;
 
-	unsigned length;
+	unsigned length, alignment;
 	bool speedHackEnabled; // May be user by stupid luck use right buffer format even with SQLDA interface?..
 };
 
@@ -223,7 +225,7 @@ private:
 };
 
 SQLDAMetadata::SQLDAMetadata(const XSQLDA* aSqlda)
-	: sqlda(aSqlda), count(0), offsets(NULL), length(0), speedHackEnabled(false)
+	: sqlda(aSqlda), count(0), offsets(NULL), length(0), alignment(0), speedHackEnabled(false)
 {
 	if (sqlda && sqlda->version != SQLDA_VERSION1)
 	{
@@ -457,10 +459,14 @@ void SQLDAMetadata::assign()
 		}
 		// No matter how good or bad is the way data is placed in message buffer, it cannot be changed
 		// because changing of it on current codebase will completely kill remote module and may be the engine as well
+		unsigned dtype;
 		length = fb_utils::sqlTypeToDsc(length, var.sqltype, var.sqllen,
-			NULL /*dtype*/, NULL /*length*/, &it.offset, &it.indOffset);
+			&dtype, NULL /*length*/, &it.offset, &it.indOffset);
 		if (it.offset != var.sqldata - base || it.indOffset != ((ISC_SCHAR*) (var.sqlind)) - base)
 			speedHackEnabled = false; // No luck
+
+		if (dtype < DTYPE_TYPE_MAX)
+			alignment = MAX(alignment, type_alignments[dtype]);
 	}
 }
 
@@ -469,6 +475,20 @@ unsigned SQLDAMetadata::getMessageLength(CheckStatusWrapper* status)
 	if (!offsets)
 		assign();
 	return length;
+}
+
+unsigned SQLDAMetadata::getAlignment(CheckStatusWrapper* status)
+{
+	if (!offsets)
+		assign();
+	return alignment;
+}
+
+unsigned SQLDAMetadata::getAlignedLength(CheckStatusWrapper* status)
+{
+	if (!offsets)
+		assign();
+	return FB_ALIGN(length, alignment);
 }
 
 void SQLDAMetadata::gatherData(DataBuffer& to)
@@ -4852,6 +4872,22 @@ void YBatch::addBlobStream(CheckStatusWrapper* status, uint length, const void* 
 	{
 		e.stuffException(status);
 	}
+}
+
+
+unsigned YBatch::getBlobAlignment(CheckStatusWrapper* status)
+{
+	try
+	{
+		YEntry<YBatch> entry(status, this);
+
+		return entry.next()->getBlobAlignment(status);
+	}
+	catch (const Exception& e)
+	{
+		e.stuffException(status);
+	}
+	return 0;
 }
 
 
