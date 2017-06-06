@@ -99,7 +99,7 @@ public:
 public:
 	explicit MsgMetadata(MsgMetadata* from)
 		: items(getPool(), from->items),
-		  length(from->length)
+		  length(from->length), alignment(from->alignment), alignedLength(from->alignedLength)
 	{
 	}
 

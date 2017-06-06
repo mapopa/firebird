@@ -95,16 +95,17 @@ private:
 	public:
 		DataCache(MemoryPool& p)
 			: PermanentStorage(p),
-			  m_used(0), m_got(0), m_limit(0)
+			  m_used(0), m_got(0), m_limit(0), m_shift(0)
 		{ }
 
 		void setBuf(ULONG size);
 
 		void put(const void* data, ULONG dataSize);
 		void put3(const void* data, ULONG dataSize, ULONG offset);
+		void align(ULONG alignment);
 		bool done();
 		ULONG get(UCHAR** buffer);
-		void remained(ULONG size);
+		void remained(ULONG size, ULONG alignment = 0);
 		ULONG getSize() const;
 		void clear();
 
@@ -112,7 +113,7 @@ private:
 		typedef Firebird::Vector<UCHAR, DsqlBatch::RAM_BATCH> Cache;
 		Firebird::AutoPtr<Cache> m_cache;
 		Firebird::AutoPtr<TempSpace> m_space;
-		ULONG m_used, m_got, m_limit;
+		ULONG m_used, m_got, m_limit, m_shift;
 	};
 
 	struct BlobMeta
@@ -133,7 +134,7 @@ private:
 	Firebird::GenericMap<Firebird::Pair<Firebird::NonPooled<ISC_QUAD, ISC_QUAD> >, QuadComparator> m_blobMap;
 	Firebird::HalfStaticArray<BlobMeta, 4> m_blobMeta;
 	ISC_QUAD m_genId;
-	ULONG m_messageSize, m_flags, m_detailed, m_bufferSize, m_lastBlob;
+	ULONG m_messageSize, m_alignedMessage, m_alignment, m_flags, m_detailed, m_bufferSize, m_lastBlob;
 	bool m_setBlobSize;
 	UCHAR m_blobPolicy;
 };

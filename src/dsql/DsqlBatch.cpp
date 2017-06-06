@@ -189,6 +189,8 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 	  m_blobMap(m_request->getPool()),
 	  m_blobMeta(m_request->getPool()),
 	  m_messageSize(0),
+	  m_alignedMessage(0),
+	  m_alignment(0),
 	  m_flags(0),
 	  m_detailed(DETAILED_LIMIT),
 	  m_bufferSize(BUFFER_LIMIT),
@@ -200,6 +202,8 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 
 	FbLocalStatus st;
 	m_messageSize = m_meta->getMessageLength(&st);
+	m_alignedMessage = m_meta->getAlignedLength(&st);
+	m_alignment = m_meta->getAlignment(&st);
 	check(&st);
 
 	if (m_messageSize > RAM_BATCH)		// hops - message does not fit in our buffer
@@ -370,7 +374,10 @@ DsqlBatch* DsqlBatch::open(thread_db* tdbb, dsql_req* req, IMessageMetadata* inM
 
 void DsqlBatch::add(thread_db* tdbb, ULONG count, const void* inBuffer)
 {
-	m_messages.put(inBuffer, count * m_messageSize);
+	if (!count)
+		return;
+	m_messages.align(m_alignment);
+	m_messages.put(inBuffer, (count - 1) * m_alignedMessage + m_messageSize);
 }
 
 void DsqlBatch::blobCheckMeta()
@@ -400,7 +407,8 @@ void DsqlBatch::blobCheckMode(bool stream, const char* fname)
 	}
 
 	ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
-		Arg::Gds(isc_random) << "This *** call can't be used with current blob policy");
+		Arg::Gds(isc_random) << "This *** call can't be used with current blob policy" <<
+		Arg::Gds(isc_random) << fname);
 }
 
 void DsqlBatch::blobPrepare()
@@ -415,12 +423,7 @@ void DsqlBatch::blobPrepare()
 	}
 
 	// Align blob stream
-	unsigned align = m_blobs.getSize() % BLOB_STREAM_ALIGN;
-	if (align)
-	{
-		SINT64 zero = 0;
-		m_blobs.put(&zero, BLOB_STREAM_ALIGN - align);
-	}
+	m_blobs.align(BLOB_STREAM_ALIGN);
 }
 
 void DsqlBatch::addBlob(thread_db* tdbb, ULONG length, const void* inBuffer, ISC_QUAD* blobId)
@@ -445,7 +448,7 @@ void DsqlBatch::addBlob(thread_db* tdbb, ULONG length, const void* inBuffer, ISC
 
 void DsqlBatch::appendBlobData(thread_db* tdbb, ULONG length, const void* inBuffer)
 {
-	blobCheckMode(false, "addBlob");
+	blobCheckMode(false, "appendBlobData");
 
 	if (m_lastBlob == MAX_ULONG)
 	{
@@ -460,7 +463,7 @@ void DsqlBatch::appendBlobData(thread_db* tdbb, ULONG length, const void* inBuff
 
 void DsqlBatch::addBlobStream(thread_db* tdbb, unsigned length, const void* inBuffer)
 {
-	blobCheckMode(true, "addBlob");
+	blobCheckMode(true, "addBlobStream");
 
 	// We have no idea where is the last blob located in the stream
 	m_lastBlob = MAX_ULONG;
@@ -623,6 +626,15 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 				startRequest = false;
 			}
 
+			// skip alignment data
+			UCHAR* alignedData = FB_ALIGN(data, m_alignment);
+			if (alignedData != data)
+			{
+				remains -= (alignedData - data);
+				data = alignedData;
+				continue;
+			}
+
 			// translate blob IDs
 			for (unsigned i = 0; i < m_blobMeta.getCount(); ++i)
 			{
@@ -635,7 +647,9 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 				if (!m_blobMap.get(*id, newId))
 				{
 					ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
-						Arg::Gds(isc_random) << "Unknown blob ID in the message: is ***");
+						Arg::Gds(isc_random) << "Unknown blob ID in the message: is ***" <<
+						Arg::Gds(isc_random) << Arg::Num(id->gds_quad_high) <<
+						Arg::Gds(isc_random) << Arg::Num(id->gds_quad_low));
 				}
 
 				m_blobMap.remove(*id);
@@ -674,7 +688,9 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 				startRequest = true;
 			}
 		}
-		m_messages.remained(remains);
+
+		UCHAR* alignedData = FB_ALIGN(data, m_alignment);
+		m_messages.remained(remains, alignedData - data);
 	}
 
 	// reset to initial state
@@ -781,6 +797,17 @@ void DsqlBatch::DataCache::put(const void* d, ULONG dataSize)
 	m_cache->append(data, dataSize);
 }
 
+void DsqlBatch::DataCache::align(ULONG alignment)
+{
+	ULONG a = getSize() % alignment;
+	if (a)
+	{
+		fb_assert(alignment <= sizeof(SINT64));
+		SINT64 zero = 0;
+		put(&zero, alignment - a);
+	}
+}
+
 bool DsqlBatch::DataCache::done()
 {
 	fb_assert(m_cache);
@@ -818,6 +845,9 @@ ULONG DsqlBatch::DataCache::get(UCHAR** buffer)
 
 	if (m_cache->getCount())
 	{
+		if (m_shift)
+			m_cache->removeCount(0, m_shift);
+
 		// return buffer full of data
 		*buffer = m_cache->begin();
 		return m_cache->getCount();
@@ -828,12 +858,25 @@ ULONG DsqlBatch::DataCache::get(UCHAR** buffer)
 	return 0;
 }
 
-void DsqlBatch::DataCache::remained(ULONG size)
+void DsqlBatch::DataCache::remained(ULONG size, ULONG alignment)
 {
+	if (size > alignment)
+	{
+		size -= alignment;
+		alignment = 0;
+	}
+	else
+	{
+		alignment -= size;
+		size = 0;
+	}
+
 	if (!size)
 		m_cache->clear();
 	else
 		m_cache->removeCount(0, m_cache->getCount() - size);
+
+	m_shift = alignment;
 }
 
 ULONG DsqlBatch::DataCache::getSize() const
