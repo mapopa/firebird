@@ -433,6 +433,7 @@ void DsqlBatch::addBlob(thread_db* tdbb, ULONG length, const void* inBuffer, ISC
 
 	// Get ready to appendBlobData()
 	m_lastBlob = m_blobs.getSize();
+	fb_assert(m_lastBlob % BLOB_STREAM_ALIGN == 0);
 
 	// Generate auto blob ID if needed
 	if (m_blobPolicy == IBatch::BLOB_IDS_ENGINE)
@@ -463,12 +464,24 @@ void DsqlBatch::appendBlobData(thread_db* tdbb, ULONG length, const void* inBuff
 
 void DsqlBatch::addBlobStream(thread_db* tdbb, unsigned length, const void* inBuffer)
 {
+	// Sanity checks
+	if (length == 0)
+		return;
+	if (length % BLOB_STREAM_ALIGN)
+	{
+		ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
+			Arg::Gds(isc_random) << "Portions of data, passed as blob stream, should have size "
+				"multiple to the alignment required for blobs");
+	}
+
 	blobCheckMode(true, "addBlobStream");
+	blobPrepare();
 
 	// We have no idea where is the last blob located in the stream
 	m_lastBlob = MAX_ULONG;
 
 	// store stream for further processing
+	fb_assert(m_blobs.getSize() % BLOB_STREAM_ALIGN == 0);
 	m_blobs.put(inBuffer, length);
 }
 
@@ -548,6 +561,7 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 						}
 
 						// parse blob header
+						fb_assert(intptr_t(data) % BLOB_STREAM_ALIGN == 0);
 						ISC_QUAD* batchBlobId = reinterpret_cast<ISC_QUAD*>(data);
 						ULONG* blobSize = reinterpret_cast<ULONG*>(data + sizeof(ISC_QUAD));
 						currentBlobSize = *blobSize;
@@ -636,6 +650,7 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 			}
 
 			// translate blob IDs
+			fb_assert(intptr_t(data) % m_alignment == 0);
 			for (unsigned i = 0; i < m_blobMeta.getCount(); ++i)
 			{
 				const SSHORT* nullFlag = reinterpret_cast<const SSHORT*>(&data[m_blobMeta[i].nullOffset]);
@@ -850,6 +865,7 @@ ULONG DsqlBatch::DataCache::get(UCHAR** buffer)
 
 		// return buffer full of data
 		*buffer = m_cache->begin();
+		fb_assert(intptr_t(*buffer) % FB_ALIGNMENT == 0);
 		return m_cache->getCount();
 	}
 

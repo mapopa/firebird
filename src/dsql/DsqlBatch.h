@@ -110,7 +110,7 @@ private:
 		void clear();
 
 	private:
-		typedef Firebird::Vector<UCHAR, DsqlBatch::RAM_BATCH> Cache;
+		typedef Firebird::Vector<UCHAR, DsqlBatch::RAM_BATCH, SINT64> Cache;
 		Firebird::AutoPtr<Cache> m_cache;
 		Firebird::AutoPtr<TempSpace> m_space;
 		ULONG m_used, m_got, m_limit, m_shift;
