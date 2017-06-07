@@ -36,7 +36,7 @@
 namespace Firebird {
 
 // Very fast static array of simple types
-template <typename T, FB_SIZE_T Capacity>
+template <typename T, FB_SIZE_T Capacity, typename A = char>
 class Vector
 {
 public:
@@ -157,7 +157,11 @@ public:
 
 protected:
 	FB_SIZE_T count;
-	T data[Capacity];
+	union
+	{
+		T data[Capacity];
+		A align;
+	};
 };
 
 // Template for default value comparsion
