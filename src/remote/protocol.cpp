@@ -818,6 +818,18 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			return P_TRUE(xdrs, p);
 		}
 
+	case op_batch_create:
+		{
+			P_BATCH_CREATE* b = &p->p_batch_create;
+			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
+			MAP(xdr_cstring_const, b->p_batch_blr);
+			MAP(xdr_cstring_const, b->p_batch_pb);
+
+			DEBUG_PRINTSIZE(xdrs, p->p_operation);
+
+			return P_TRUE(xdrs, p);
+		}
+
 	///case op_insert:
 	default:
 #ifdef DEV_BUILD

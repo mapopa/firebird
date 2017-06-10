@@ -276,6 +276,8 @@ enum P_OP
 	op_cond_accept			= 98,	// Server accepts connection, returns some data to client
 									// and asks client to continue authentication before attach call
 
+	op_batch_create			= 99,
+
 	op_max
 };
 
@@ -645,6 +647,16 @@ typedef struct p_crypt_callback
 } P_CRYPT_CALLBACK;
 
 
+// Batch definitions
+
+typedef struct p_batch_create
+{
+    OBJCT			p_batch_statement;	// statement object
+    CSTRING_CONST	p_batch_blr;		// blr describing input messages
+    CSTRING_CONST   p_batch_pb;			// parameters block
+} P_BATCH_CREATE;
+
+
 // Generalize packet (sic!)
 
 typedef struct packet
@@ -688,6 +700,7 @@ typedef struct packet
 	P_AUTH_CONT p_auth_cont;	// Request more auth data
 	P_CRYPT p_crypt;			// Start wire crypt
 	P_CRYPT_CALLBACK p_cc;		// Database crypt callback
+	P_BATCH_CREATE p_batch_create;	// Create batch interface
 
 public:
 	packet()

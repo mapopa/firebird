@@ -299,6 +299,51 @@ int ResultSet::release()
 	return 0;
 }
 
+class Batch FB_FINAL : public RefCntIface<IBatchImpl<Batch, CheckStatusWrapper> >
+{
+public:
+	// IResultSet implementation
+	int release();
+	void add(Firebird::CheckStatusWrapper* status, unsigned count, const void* inBuffer);
+	void addBlob(Firebird::CheckStatusWrapper* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId);
+	void appendBlobData(Firebird::CheckStatusWrapper* status, unsigned length, const void* inBuffer);
+	void addBlobStream(Firebird::CheckStatusWrapper* status, uint length, const void* inBuffer);
+	void registerBlob(Firebird::CheckStatusWrapper* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId);
+	Firebird::IBatchCompletionState* execute(Firebird::CheckStatusWrapper* status, Firebird::ITransaction* transaction);
+	void cancel(Firebird::CheckStatusWrapper* status);
+	unsigned getBlobAlignment(Firebird::CheckStatusWrapper* status);
+
+	Batch(Statement* s, IMessageMetadata* inFmt)
+		: stmt(s), format(inFmt), tmpStatement(false)
+	{ }
+
+private:
+	//void releaseBatch();
+	void freeClientData(CheckStatusWrapper* status, bool force = false);
+
+	Statement* stmt;
+	RefPtr<IMessageMetadata> format;
+
+public:
+	bool tmpStatement;
+};
+
+int Batch::release()
+{
+	if (--refCounter != 0)
+		return 1;
+
+	if (stmt)
+	{
+		LocalStatus ls;
+		CheckStatusWrapper status(&ls);
+		freeClientData(&status, true);
+	}
+	delete this;
+
+	return 0;
+}
+
 class Statement FB_FINAL : public RefCntIface<IStatementImpl<Statement, CheckStatusWrapper> >
 {
 public:
@@ -344,7 +389,7 @@ public:
 		statement->rsr_timeout = timeOut;
 	}
 
-	IBatch* createBatch(CheckStatusWrapper* status, IMessageMetadata* inMetadata,
+	Batch* createBatch(CheckStatusWrapper* status, IMessageMetadata* inMetadata,
 		unsigned parLength, const unsigned char* par);
 
 public:
@@ -539,7 +584,7 @@ public:
 	unsigned int getStatementTimeout(CheckStatusWrapper* status);
 	void setStatementTimeout(CheckStatusWrapper* status, unsigned int timeOut);
 
-	IBatch* createBatch(Firebird::CheckStatusWrapper* status, ITransaction* transaction,
+	Batch* createBatch(Firebird::CheckStatusWrapper* status, ITransaction* transaction,
 		unsigned stmtLength, const char* sqlStmt, unsigned dialect,
 		IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par);
 
@@ -1863,34 +1908,132 @@ void Attachment::setStatementTimeout(CheckStatusWrapper* status, unsigned int ti
 }
 
 
-IBatch* Attachment::createBatch(CheckStatusWrapper* status, ITransaction* transaction,
+Batch* Attachment::createBatch(CheckStatusWrapper* status, ITransaction* transaction,
 	unsigned stmtLength, const char* sqlStmt, unsigned dialect,
 	IMessageMetadata* inMetadata, unsigned parLength, const unsigned char* par)
 {
-	try
+/**************************************
+ *
+ *	c r e a t e B a t c h
+ *
+ **************************************
+ *
+ * Functional description
+ *	Create jdbc-style batch for SQL statement.
+ *
+ **************************************/
+	Statement* stmt = prepare(status, transaction, stmtLength, sqlStmt, dialect, 0);
+	if (status->getState() & Firebird::IStatus::STATE_ERRORS)
 	{
-		Arg::Gds(isc_wish_list).raise();
+		return NULL;
 	}
-	catch (const Exception& ex)
+
+	Batch* rc = stmt->createBatch(status, inMetadata, parLength, par);
+	if (status->getState() & Firebird::IStatus::STATE_ERRORS)
 	{
-		ex.stuffException(status);
+		stmt->release();
+		return NULL;
 	}
-	return nullptr;
+
+	rc->tmpStatement = true;
+	return rc;
 }
 
 
-IBatch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMetadata,
+Batch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMetadata,
 	unsigned parLength, const unsigned char* par)
 {
+/**************************************
+ *
+ *	c r e a t e B a t c h
+ *
+ **************************************
+ *
+ * Functional description
+ *	Create jdbc-style batch for prepared statement.
+ *
+ **************************************/
+
 	try
 	{
-		Arg::Gds(isc_wish_list).raise();
+		reset(status);
+
+		// Check and validate handles, etc.
+		CHECK_HANDLE(statement, isc_bad_req_handle);
+		Rdb* rdb = statement->rsr_rdb;
+		CHECK_HANDLE(rdb, isc_bad_db_handle);
+		rem_port* port = rdb->rdb_port;
+
+		// Build input BLR
+		RefPtr<IMessageMetadata> meta;
+		if (!inMetadata)
+		{
+			meta.assignRefNoIncr(getInputMetadata(status));
+			inMetadata = meta;
+		}
+		BlrFromMessage inBlr(inMetadata, dialect, port->port_protocol);
+		const unsigned int in_blr_length = inBlr.getLength();
+		const UCHAR* const in_blr = inBlr.getBytes();
+
+		// Validate data length
+		CHECK_LENGTH(port, in_blr_length);
+
+		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
+
+		delete statement->rsr_bind_format;
+		statement->rsr_bind_format = NULL;
+		if (port->port_statement)
+		{
+			delete port->port_statement->rsr_select_format;
+			port->port_statement->rsr_select_format = NULL;
+		}
+
+		// Parse the blr describing the message, if there is any.
+		if (in_blr_length)
+			statement->rsr_bind_format = PARSE_msg_format(in_blr, in_blr_length);
+
+		RMessage* message = NULL;
+		if (!statement->rsr_buffer)
+		{
+			statement->rsr_buffer = message = FB_NEW RMessage(0);
+			statement->rsr_message = message;
+
+			message->msg_next = message;
+
+			statement->rsr_fmt_length = 0;
+		}
+		else {
+			message = statement->rsr_message = statement->rsr_buffer;
+		}
+
+		statement->rsr_flags.clear(Rsr::FETCHED);
+		statement->rsr_format = statement->rsr_bind_format;
+		statement->clearException();
+
+		// set up the packet for the other guy...
+
+		PACKET* packet = &rdb->rdb_packet;
+		packet->p_operation = op_batch_create;
+		P_BATCH_CREATE* batch = &packet->p_batch_create;
+		batch->p_batch_statement = statement->rsr_id;
+		batch->p_batch_blr.cstr_length = in_blr_length;
+		batch->p_batch_blr.cstr_address = in_blr;
+		batch->p_batch_pb.cstr_length = parLength;
+		batch->p_batch_pb.cstr_address = par;
+
+		send_partial_packet(port, packet);
+		defer_packet(port, packet, true);
+		message->msg_address = NULL;
+
+		Batch* b = FB_NEW Batch(this, inMetadata);
+		b->addRef();
+		return b;
 	}
 	catch (const Exception& ex)
 	{
 		ex.stuffException(status);
 	}
-	return nullptr;
+	return NULL;
 }
 
 
