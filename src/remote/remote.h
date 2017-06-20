@@ -485,6 +485,8 @@ struct Rsr : public Firebird::GlobalStorage, public TypedHandle<rem_type_rsr>
 	unsigned int	rsr_timeout;		// Statement timeout to be set on open\execute
 	Rsr**			rsr_self;
 
+	ULONG			rsr_batch_size;		// Aligned message size for IBatch operations
+
 public:
 	// Values for rsr_flags.
 	enum {

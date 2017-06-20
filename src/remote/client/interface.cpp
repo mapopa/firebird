@@ -313,14 +313,66 @@ public:
 	void cancel(Firebird::CheckStatusWrapper* status);
 	unsigned getBlobAlignment(Firebird::CheckStatusWrapper* status);
 
-	Batch(Statement* s, IMessageMetadata* inFmt)
-		: stmt(s), format(inFmt), tmpStatement(false)
-	{ }
+	Batch(Statement* s, IMessageMetadata* inFmt, unsigned parLength, const unsigned char* par)
+		: rdr(getPool(), ClumpletReader::WideTagged, par, parLength),
+		  messageSize(0), alignedSize(0),
+		  stmt(s), format(inFmt), tmpStatement(false)
+	{
+		LocalStatus ls;
+		CheckStatusWrapper st(&ls);
+
+		messageSize = format->getMessageLength(&st);
+		alignedSize = format->getAlignedLength(&st);
+
+		for (rdr.rewind(); !rdr.isEof(); rdr.moveNext())
+		{
+			UCHAR t = rdr.getClumpTag();
+/*			switch(t)
+			{
+			case IBatch::MULTIERROR:
+			case IBatch::RECORD_COUNTS:
+				if (pb.getInt())
+					m_flags |= (1 << t);
+				else
+					m_flags &= ~(1 << t);
+				break;
+
+			case IBatch::BLOB_IDS:
+				m_blobPolicy = pb.getInt();
+				switch(m_blobPolicy)
+				{
+				case IBatch::BLOB_IDS_ENGINE:
+				case IBatch::BLOB_IDS_USER:
+				case IBatch::BLOB_IDS_STREAM:
+					break;
+				default:
+					m_blobPolicy = IBatch::BLOB_IDS_NONE;
+					break;
+				}
+				break;
+
+			case IBatch::DETAILED_ERRORS:
+				m_detailed = pb.getInt();
+				if (m_detailed > DETAILED_LIMIT * 4)
+					m_detailed = DETAILED_LIMIT * 4;
+				break;
+
+			case IBatch::BUFFER_BYTES_SIZE:
+				m_bufferSize = pb.getInt();
+				if (m_bufferSize > BUFFER_LIMIT * 4)
+					m_bufferSize = BUFFER_LIMIT * 4;
+				break;
+			}*/
+		}
+	}
 
 private:
 	//void releaseBatch();
 	void freeClientData(CheckStatusWrapper* status, bool force = false);
+	void releaseStatement();
 
+	ClumpletReader rdr;
+	ULONG messageSize, alignedSize;
 	Statement* stmt;
 	RefPtr<IMessageMetadata> format;
 
@@ -405,6 +457,11 @@ public:
 	Rsr* getStatement()
 	{
 		return statement;
+	}
+
+	Attachment* getAttachment()
+	{
+		return remAtt;
 	}
 
 	void parseMetadata(const Array<UCHAR>& buffer)
@@ -2025,7 +2082,7 @@ Batch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMe
 		defer_packet(port, packet, true);
 		message->msg_address = NULL;
 
-		Batch* b = FB_NEW Batch(this, inMetadata);
+		Batch* b = FB_NEW Batch(this, inMetadata, parLength, par);
 		b->addRef();
 		return b;
 	}
@@ -2034,6 +2091,232 @@ Batch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMe
 		ex.stuffException(status);
 	}
 	return NULL;
+}
+
+
+void Batch::add(CheckStatusWrapper* status, unsigned count, const void* inBuffer)
+{
+	try
+	{
+		// Check and validate handles, etc.
+
+		if (!stmt)
+		{
+			Arg::Gds(isc_bad_req_handle).raise();
+		}
+		Rsr* statement = stmt->getStatement();
+		CHECK_HANDLE(statement, isc_bad_req_handle);
+		Rdb* rdb = statement->rsr_rdb;
+		CHECK_HANDLE(rdb, isc_bad_db_handle);
+		rem_port* port = rdb->rdb_port;
+		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
+
+		if (count == 0)
+			return;
+
+		RMessage* message = statement->rsr_buffer;
+		message->msg_address = (UCHAR*)inBuffer;
+
+		PACKET* packet = &rdb->rdb_packet;
+		packet->p_operation = op_batch_msg;
+		P_BATCH_MSG* batch = &packet->p_batch_msg;
+		batch->p_batch_statement = statement->rsr_id;
+		batch->p_batch_messages = count;
+
+		statement->rsr_batch_size = alignedSize;
+
+		send_partial_packet(port, packet);
+		defer_packet(port, packet, true);
+
+		message->msg_address = NULL;
+	}
+	catch (const Exception& ex)
+	{
+		ex.stuffException(status);
+	}
+}
+
+
+void Batch::addBlob(CheckStatusWrapper* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId)
+{
+	try
+	{
+	}
+	catch (const Exception& ex)
+	{
+		ex.stuffException(status);
+	}
+}
+
+
+void Batch::appendBlobData(CheckStatusWrapper* status, unsigned length, const void* inBuffer)
+{
+	try
+	{
+	}
+	catch (const Exception& ex)
+	{
+		ex.stuffException(status);
+	}
+}
+
+
+void Batch::addBlobStream(CheckStatusWrapper* status, uint length, const void* inBuffer)
+{
+	try
+	{
+	}
+	catch (const Exception& ex)
+	{
+		ex.stuffException(status);
+	}
+}
+
+
+unsigned Batch::getBlobAlignment(CheckStatusWrapper*)
+{
+	return -1;
+}
+
+
+void Batch::registerBlob(CheckStatusWrapper* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId)
+{
+	try
+	{
+	}
+	catch (const Exception& ex)
+	{
+		ex.stuffException(status);
+	}
+}
+
+
+IBatchCompletionState* Batch::execute(CheckStatusWrapper* status, ITransaction* apiTra)
+{
+	IBatchCompletionState* cs;
+	try
+	{
+		// Check and validate handles, etc.
+
+		if (!stmt)
+		{
+			Arg::Gds(isc_bad_req_handle).raise();
+		}
+		Rsr* statement = stmt->getStatement();
+		CHECK_HANDLE(statement, isc_bad_req_handle);
+
+		Rdb* rdb = statement->rsr_rdb;
+		CHECK_HANDLE(rdb, isc_bad_db_handle);
+
+		rem_port* port = rdb->rdb_port;
+		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
+
+		Rtr* transaction = NULL;
+		Transaction* rt = stmt->getAttachment()->remoteTransactionInterface(apiTra);
+		if (rt)
+		{
+			transaction = rt->getTransaction();
+			CHECK_HANDLE(transaction, isc_bad_trans_handle);
+		}
+
+		PACKET* packet = &rdb->rdb_packet;
+		packet->p_operation = op_batch_exec;
+		P_BATCH_EXEC* batch = &packet->p_batch_exec;
+		batch->p_batch_statement = statement->rsr_id;
+		batch->p_batch_transaction = transaction->rtr_id;
+
+		send_and_receive(status, rdb, packet);
+	}
+	catch (const Exception& ex)
+	{
+		ex.stuffException(status);
+		return NULL;
+	}
+	return cs;
+}
+
+
+void Batch::cancel(CheckStatusWrapper* status)
+{
+	try
+	{
+	}
+	catch (const Exception& ex)
+	{
+		ex.stuffException(status);
+	}
+}
+
+
+void Batch::freeClientData(CheckStatusWrapper* status, bool force)
+{
+	try
+	{
+		// Check and validate handles, etc.
+
+		if (!stmt)
+		{
+			Arg::Gds(isc_dsql_cursor_err).raise();
+		}
+		Rsr* statement = stmt->getStatement();
+		CHECK_HANDLE(statement, isc_bad_req_handle);
+		Rdb* rdb = statement->rsr_rdb;
+		rem_port* port = rdb->rdb_port;
+		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
+
+/*		if (statement->rsr_flags.test(Rsr::LAZY))
+		{
+			statement->rsr_flags.clear(Rsr::FETCHED);
+			statement->rsr_rtr = NULL;
+
+			clear_queue(rdb->rdb_port);
+			REMOTE_reset_statement(statement);
+
+			releaseStatement();
+			return;
+		}
+ */
+
+		PACKET* packet = &rdb->rdb_packet;
+		packet->p_operation = op_batch_rls;
+
+		P_BATCH_FREE* batch = &packet->p_batch_free;
+		batch->p_batch_statement = statement->rsr_id;
+
+		if (rdb->rdb_port->port_flags & PORT_lazy)
+		{
+			defer_packet(rdb->rdb_port, packet);
+			packet->p_resp.p_resp_object = statement->rsr_id;
+		}
+		else
+		{
+			try
+			{
+				send_and_receive(status, rdb, packet);
+			}
+			catch (const Exception&)
+			{
+				if (!force)
+					throw;
+			}
+		}
+
+		releaseStatement();
+	}
+	catch (const Exception& ex)
+	{
+		ex.stuffException(status);
+	}
+}
+
+
+void Batch::releaseStatement()
+{
+	if (tmpStatement)
+	{
+		stmt->release();
+	}
+	stmt = NULL;
 }
 
 

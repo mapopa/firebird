@@ -277,6 +277,9 @@ enum P_OP
 									// and asks client to continue authentication before attach call
 
 	op_batch_create			= 99,
+	op_batch_msg			= 100,
+	op_batch_exec			= 101,
+	op_batch_rls			= 102,
 
 	op_max
 };
@@ -656,6 +659,23 @@ typedef struct p_batch_create
     CSTRING_CONST   p_batch_pb;			// parameters block
 } P_BATCH_CREATE;
 
+typedef struct p_batch_msg
+{
+	OBJCT	p_batch_statement;			// statement object
+	ULONG	p_batch_messages;			// number of messages
+} P_BATCH_MSG;
+
+typedef struct p_batch_exec
+{
+	OBJCT	p_batch_statement;			// statement object
+	OBJCT   p_batch_transaction;		// transaction object
+} P_BATCH_EXEC;
+
+typedef struct p_batch_free
+{
+	OBJCT	p_batch_statement;			// statement object
+} P_BATCH_FREE;
+
 
 // Generalize packet (sic!)
 
@@ -700,7 +720,10 @@ typedef struct packet
 	P_AUTH_CONT p_auth_cont;	// Request more auth data
 	P_CRYPT p_crypt;			// Start wire crypt
 	P_CRYPT_CALLBACK p_cc;		// Database crypt callback
-	P_BATCH_CREATE p_batch_create;	// Create batch interface
+	P_BATCH_CREATE p_batch_create; // Create batch interface
+	P_BATCH_MSG p_batch_msg;	// Add messages to batch
+	P_BATCH_EXEC p_batch_exec;	// Run batch
+	P_BATCH_FREE p_batch_free;	// Destroy batch
 
 public:
 	packet()

@@ -830,6 +830,68 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			return P_TRUE(xdrs, p);
 		}
 
+	case op_batch_msg:
+		{
+			P_BATCH_MSG* b = &p->p_batch_msg;
+			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
+			MAP(xdr_u_long, b->p_batch_messages);
+
+			if (xdrs->x_op == XDR_FREE)
+				return P_TRUE(xdrs, p);
+
+			rem_port* port = (rem_port*) xdrs->x_public;
+			SSHORT statement_id = b->p_batch_statement;
+			Rsr* statement;
+			if (statement_id >= 0)
+			{
+				if (static_cast<ULONG>(statement_id) >= port->port_objects.getCount())
+					return P_FALSE(xdrs, p);
+
+				try
+				{
+					statement = port->port_objects[statement_id];
+				}
+				catch (const status_exception&)
+				{
+					return P_FALSE(xdrs, p);
+				}
+			}
+			else
+			{
+				statement = port->port_statement;
+			}
+			if (!statement)
+				return P_FALSE(xdrs, p);
+
+			RMessage* message = statement->rsr_buffer;
+			if (!message)
+				return P_FALSE(xdrs, p);
+			statement->rsr_buffer = message->msg_next;
+
+			fb_assert(message->msg_address);
+
+			ULONG count = b->p_batch_messages;
+			while (count--)
+			{
+				if (! xdr_packed_message(xdrs, message, statement->rsr_format))
+					return P_FALSE(xdrs, p);
+				message->msg_address += statement->rsr_batch_size;
+			}
+
+			DEBUG_PRINTSIZE(xdrs, p->p_operation);
+
+			return P_TRUE(xdrs, p);
+		}
+
+	case op_batch_exec:
+		{
+			P_BATCH_EXEC* b = &p->p_batch_exec;
+			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
+			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_transaction));
+
+			return P_TRUE(xdrs, p);
+		}
+
 	///case op_insert:
 	default:
 #ifdef DEV_BUILD
