@@ -2114,21 +2114,16 @@ void Batch::add(CheckStatusWrapper* status, unsigned count, const void* inBuffer
 		if (count == 0)
 			return;
 
-		RMessage* message = statement->rsr_buffer;
-		message->msg_address = (UCHAR*)inBuffer;
-
 		PACKET* packet = &rdb->rdb_packet;
 		packet->p_operation = op_batch_msg;
 		P_BATCH_MSG* batch = &packet->p_batch_msg;
 		batch->p_batch_statement = statement->rsr_id;
 		batch->p_batch_messages = count;
-
+		batch->p_batch_data.cstr_address = (UCHAR*)inBuffer;
 		statement->rsr_batch_size = alignedSize;
 
 		send_partial_packet(port, packet);
 		defer_packet(port, packet, true);
-
-		message->msg_address = NULL;
 	}
 	catch (const Exception& ex)
 	{
@@ -2193,7 +2188,7 @@ void Batch::registerBlob(CheckStatusWrapper* status, const ISC_QUAD* existingBlo
 
 IBatchCompletionState* Batch::execute(CheckStatusWrapper* status, ITransaction* apiTra)
 {
-	IBatchCompletionState* cs;
+	IBatchCompletionState* cs = nullptr;
 	try
 	{
 		// Check and validate handles, etc.

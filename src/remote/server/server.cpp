@@ -3307,6 +3307,70 @@ ISC_STATUS rem_port::execute_immediate(P_OP op, P_SQLST * exnow, PACKET* sendL)
 }
 
 
+void rem_port::batch_create(P_BATCH_CREATE* batch, PACKET* sendL)
+{
+	LocalStatus ls;
+	CheckStatusWrapper status_vector(&ls);
+	Rsr* statement;
+	getHandle(statement, batch->p_batch_statement);
+	statement->checkIface();
+
+	const ULONG out_blr_length = batch->p_batch_blr.cstr_length;
+	const UCHAR* out_blr = batch->p_batch_blr.cstr_address;
+	InternalMessageBuffer msgBuffer(out_blr_length, out_blr, 0, NULL);		// !!!!!! add explicit msg length for control
+
+	statement->rsr_batch =
+		statement->rsr_iface->createBatch(&status_vector, msgBuffer.metadata,
+			batch->p_batch_pb.cstr_length, batch->p_batch_pb.cstr_address);
+
+	this->send_response(sendL, 0, 0, &status_vector, true);
+
+	statement->rsr_batch_size = 0;
+	if (!(status_vector.getState() & Firebird::IStatus::STATE_ERRORS))
+	{
+		if (msgBuffer.metadata)
+			statement->rsr_batch_size = msgBuffer.metadata->getAlignedLength(&status_vector);
+		else
+		{
+			IMessageMetadata* m = statement->rsr_iface->getInputMetadata(&status_vector);
+			statement->rsr_batch_size = m->getAlignedLength(&status_vector);
+			m->release();
+		}
+	}
+}
+
+void rem_port::batch_msg(P_BATCH_MSG* batch, PACKET* sendL)
+{
+	LocalStatus ls;
+	CheckStatusWrapper status_vector(&ls);
+
+	Rsr* statement;
+	getHandle(statement, batch->p_batch_statement);
+	statement->checkIface();
+
+	const ULONG count = batch->p_batch_messages;
+	const void* data = batch->p_batch_data.cstr_address;
+
+	statement->rsr_batch->add(&status_vector, count, data);
+
+	this->send_response(sendL, 0, 0, &status_vector, true);
+}
+
+
+void rem_port::batch_exec(P_BATCH_EXEC* batch, PACKET* sendL)
+{
+	Rtr* transaction = NULL;
+	getHandle(transaction, batch->p_batch_transaction);
+}
+
+
+void rem_port::batch_rls(P_BATCH_FREE* batch, PACKET* sendL)
+{
+}
+
+
+
+
 ISC_STATUS rem_port::execute_statement(P_OP op, P_SQLDATA* sqldata, PACKET* sendL)
 {
 /*****************************************
@@ -4521,6 +4585,23 @@ static bool process_packet(rem_port* port, PACKET* sendL, PACKET* receive, rem_p
 		case op_crypt:
 			port->start_crypt(&receive->p_crypt, sendL);
 			break;
+
+		case op_batch_create:
+			port->batch_create(&receive->p_batch_create, sendL);
+			break;
+
+		case op_batch_msg:
+			port->batch_msg(&receive->p_batch_msg, sendL);
+			break;
+
+		case op_batch_exec:
+			port->batch_exec(&receive->p_batch_exec, sendL);
+			break;
+
+		case op_batch_rls:
+			port->batch_rls(&receive->p_batch_free, sendL);
+			break;
+
 
 		///case op_insert:
 		default:

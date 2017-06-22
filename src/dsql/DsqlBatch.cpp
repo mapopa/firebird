@@ -34,149 +34,29 @@
 #include "../common/classes/auto.h"
 #include "../common/classes/fb_string.h"
 #include "../common/utils_proto.h"
+#include "../common/classes/BatchCompletionState.h"
 
 using namespace Firebird;
 using namespace Jrd;
 
 namespace {
-
 	const char* TEMP_NAME = "fb_batch";
-
 	const UCHAR blobParameters[] = {isc_bpb_version1, isc_bpb_type, 1, isc_bpb_type_stream};
 
-	class BatchCompletionState FB_FINAL :
-    	public DisposeIface<Firebird::IBatchCompletionStateImpl<BatchCompletionState, CheckStatusWrapper> >
+	class JTrans : public Firebird::Transliterate
 	{
 	public:
-		BatchCompletionState(bool storeCounts, ULONG lim)
-			: rare(getPool()),
-			  reccount(0u),
-			  detailedLimit(lim)
+		JTrans(thread_db* tdbb)
+			: m_tdbb(tdbb)
+		{ }
+
+		void transliterate(IStatus* status)
 		{
-			if (storeCounts)
-				array = FB_NEW_POOL(getPool()) DenseArray(getPool());
-		}
-
-		void regError(thread_db* tdbb, IStatus* errStatus)
-		{
-			IStatus* newVector = nullptr;
-			if (rare.getCount() < detailedLimit)
-			{
-				newVector = errStatus->clone();
-				JRD_transliterate(tdbb, newVector);
-			}
-			rare.add(StatusPair(reccount, newVector));
-
-			regUpdate(tdbb, IBatchCompletionState::EXECUTE_FAILED);
-		}
-
-		void regUpdate(thread_db*, SLONG count)
-		{
-			if (array)
-				array->push(count);
-
-			++reccount;
-		}
-
-		// IBatchCompletionState implementation
-		unsigned getSize(CheckStatusWrapper*)
-		{
-			return reccount;
-		}
-
-		int getState(CheckStatusWrapper* status, unsigned pos)
-		{
-			try
-			{
-				if (pos >= reccount)
-					(Arg::Gds(isc_random) << "Position is out of range").raise();
-				if (array)
-					return (*array)[pos];
-
-				ULONG index = find(pos);
-				return (index >= rare.getCount() || rare[index].first != pos) ?
-					SUCCESS_NO_INFO : EXECUTE_FAILED;
-			}
-			catch (const Exception& ex)
-			{
-				ex.stuffException(status);
-			}
-			return 0;
-		}
-
-		unsigned findError(CheckStatusWrapper* status, unsigned pos)
-		{
-			try
-			{
-				ULONG index = find(pos);
-				if (index < rare.getCount())
-					return rare[index].first;
-			}
-			catch (const Exception& ex)
-			{
-				ex.stuffException(status);
-			}
-			return NO_MORE_ERRORS;
-		}
-
-		void getStatus(CheckStatusWrapper* status, IStatus* to, unsigned pos)
-		{
-			try
-			{
-				if (pos >= reccount)
-					(Arg::Gds(isc_random) << "Position is out of range").raise();
-
-				ULONG index = find(pos);
-				if (index < rare.getCount() && rare[index].first == pos)
-				{
-					if (rare[index].second)
-					{
-						CheckStatusWrapper w(to);
-						fb_utils::copyStatus(&w, rare[index].second);
-						return;
-					}
-					(Arg::Gds(isc_random) << "Detailed error info is missing in batch").raise();
-				}
-			}
-			catch (const Exception& ex)
-			{
-				ex.stuffException(status);
-			}
-		}
-
-		void dispose()
-		{
-			delete this;
-		}
-
-		~BatchCompletionState()
-		{
-			for (unsigned i = 0; i < rare.getCount() && rare[i].second; ++i)
-				rare[i].second->dispose();
+			JRD_transliterate(m_tdbb, status);
 		}
 
 	private:
-		typedef Pair<NonPooled<ULONG, IStatus*> > StatusPair;
-		typedef Array<Pair<NonPooled<ULONG, IStatus*> > > RarefiedArray;
-		RarefiedArray rare;
-		typedef Array<SLONG> DenseArray;
-		AutoPtr<DenseArray> array;
-		ULONG reccount, detailedLimit;
-
-		ULONG find(ULONG recno) const
-		{
-			ULONG high = rare.getCount(), low = 0;
-			while (high > low)
-			{
-				ULONG med = (high + low) / 2;
-				if (recno > rare[med].first)
-					low = med + 1;
-				else
-					high = med;
-			}
-
-			return low;
-		}
+		thread_db* m_tdbb;
 	};
 }
 
@@ -685,7 +565,7 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 				EXE_send(tdbb, req, message->msg_number, message->msg_length, msgBuffer);
 				ULONG after = req->req_records_inserted + req->req_records_updated +
 					req->req_records_deleted;
-				completionState->regUpdate(tdbb, after - before);
+				completionState->regUpdate(after - before);
 			}
 			catch (const Exception& ex)
 			{
@@ -693,7 +573,8 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 				ex.stuffException(&status);
 				tdbb->tdbb_status_vector->init();
 
-				completionState->regError(tdbb, &status);
+				JTrans jtr(tdbb);
+				completionState->regError(&status, &jtr);
 				if (!(m_flags & (1 << IBatch::MULTIERROR)))
 				{
 					cancel(tdbb);

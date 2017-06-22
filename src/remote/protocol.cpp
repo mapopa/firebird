@@ -837,7 +837,10 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			MAP(xdr_u_long, b->p_batch_messages);
 
 			if (xdrs->x_op == XDR_FREE)
+			{
+				MAP(xdr_cstring, b->p_batch_data);
 				return P_TRUE(xdrs, p);
+			}
 
 			rem_port* port = (rem_port*) xdrs->x_public;
 			SSHORT statement_id = b->p_batch_statement;
@@ -863,21 +866,28 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			if (!statement)
 				return P_FALSE(xdrs, p);
 
+			ULONG count = b->p_batch_messages;
+			ULONG size = statement->rsr_batch_size;
+			if (xdrs->x_op == XDR_DECODE)
+			{
+				b->p_batch_data.cstr_length = (count ? count : 1) * size;
+				alloc_cstring(xdrs, &b->p_batch_data);
+			}
+
 			RMessage* message = statement->rsr_buffer;
 			if (!message)
 				return P_FALSE(xdrs, p);
 			statement->rsr_buffer = message->msg_next;
+			message->msg_address = b->p_batch_data.cstr_address;
 
-			fb_assert(message->msg_address);
-
-			ULONG count = b->p_batch_messages;
 			while (count--)
 			{
-				if (! xdr_packed_message(xdrs, message, statement->rsr_format))
+				if (!xdr_packed_message(xdrs, message, statement->rsr_format))
 					return P_FALSE(xdrs, p);
 				message->msg_address += statement->rsr_batch_size;
 			}
 
+			message->msg_address = nullptr;
 			DEBUG_PRINTSIZE(xdrs, p->p_operation);
 
 			return P_TRUE(xdrs, p);

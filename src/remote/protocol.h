@@ -663,6 +663,7 @@ typedef struct p_batch_msg
 {
 	OBJCT	p_batch_statement;			// statement object
 	ULONG	p_batch_messages;			// number of messages
+	CSTRING p_batch_data;
 } P_BATCH_MSG;
 
 typedef struct p_batch_exec
@@ -670,6 +671,10 @@ typedef struct p_batch_exec
 	OBJCT	p_batch_statement;			// statement object
 	OBJCT   p_batch_transaction;		// transaction object
 } P_BATCH_EXEC;
+
+typedef struct p_batch_cs				// completion state
+{
+} P_BATCH_CS;
 
 typedef struct p_batch_free
 {

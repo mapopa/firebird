@@ -127,6 +127,7 @@ typedef Firebird::RefPtr<Firebird::IBlob> ServBlob;
 typedef Firebird::RefPtr<Firebird::ITransaction> ServTransaction;
 typedef Firebird::RefPtr<Firebird::IStatement> ServStatement;
 typedef Firebird::RefPtr<Firebird::IResultSet> ServCursor;
+typedef Firebird::RefPtr<Firebird::IBatch> ServBatch;
 typedef Firebird::RefPtr<Firebird::IRequest> ServRequest;
 typedef Firebird::RefPtr<Firebird::IEvents> ServEvents;
 typedef Firebird::RefPtr<Firebird::IService> ServService;
@@ -464,6 +465,7 @@ struct Rsr : public Firebird::GlobalStorage, public TypedHandle<rem_type_rsr>
 	Rtr*			rsr_rtr;
 	ServStatement	rsr_iface;
 	ServCursor		rsr_cursor;
+	ServBatch		rsr_batch;
 	rem_fmt*		rsr_bind_format;		// Format of bind message
 	rem_fmt*		rsr_select_format;		// Format of select message
 	rem_fmt*		rsr_user_select_format; // Format of user's select message
@@ -502,7 +504,7 @@ public:
 
 public:
 	Rsr() :
-		rsr_next(0), rsr_rdb(0), rsr_rtr(0), rsr_iface(NULL), rsr_cursor(NULL),
+		rsr_next(0), rsr_rdb(0), rsr_rtr(0), rsr_iface(NULL), rsr_cursor(NULL), rsr_batch(NULL),
 		rsr_bind_format(0), rsr_select_format(0), rsr_user_select_format(0),
 		rsr_format(0), rsr_message(0), rsr_buffer(0), rsr_status(0),
 		rsr_id(0), rsr_fmt_length(0),
@@ -1213,6 +1215,10 @@ public:
 	ISC_STATUS	transact_request(P_TRRQ *, PACKET*);
 	SSHORT		asyncReceive(PACKET* asyncPacket, const UCHAR* buffer, SSHORT dataSize);
 	void		start_crypt(P_CRYPT*, PACKET*);
+	void		batch_create(P_BATCH_CREATE*, PACKET*);
+	void		batch_msg(P_BATCH_MSG*, PACKET*);
+	void		batch_exec(P_BATCH_EXEC*, PACKET*);
+	void		batch_rls(P_BATCH_FREE*, PACKET*);
 
 	Firebird::string getRemoteId() const;
 	void auxAcceptError(PACKET* packet);
