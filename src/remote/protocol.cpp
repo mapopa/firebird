@@ -41,6 +41,7 @@
 #include "../common/sdl_proto.h"
 #include "../common/StatusHolder.h"
 #include "../common/classes/stack.h"
+#include "../common/classes/BatchCompletionState.h"
 
 using namespace Firebird;
 
@@ -84,6 +85,8 @@ inline void DEBUG_XDR_FREE(XDR*, const void*, const void*, ULONG)
 {
 }
 #endif // DEBUG_XDR_MEMORY
+
+#define P_CHECK(xdr, p, st) if (st.getState() & IStatus::STATE_ERRORS) return P_FALSE(xdr, p)
 
 #define MAP(routine, ptr)	if (!routine (xdrs, &ptr)) return P_FALSE(xdrs, p);
 const ULONG MAX_OPAQUE		= 32768;
@@ -898,6 +901,118 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			P_BATCH_EXEC* b = &p->p_batch_exec;
 			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
 			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_transaction));
+
+			return P_TRUE(xdrs, p);
+		}
+
+	case op_batch_cs:
+		{
+			P_BATCH_CS* b = &p->p_batch_cs;
+			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
+			MAP(xdr_u_long, b->p_batch_reccount);
+			MAP(xdr_u_long, b->p_batch_updates);
+			MAP(xdr_u_long, b->p_batch_vectors);
+			MAP(xdr_u_long, b->p_batch_errors);
+
+			if (xdrs->x_op == XDR_FREE)
+				return P_TRUE(xdrs, p);
+
+			rem_port* port = (rem_port*) xdrs->x_public;
+			SSHORT statement_id = b->p_batch_statement;
+			Rsr* statement;
+			if (statement_id >= 0)
+			{
+				if (static_cast<ULONG>(statement_id) >= port->port_objects.getCount())
+					return P_FALSE(xdrs, p);
+
+				try
+				{
+					statement = port->port_objects[statement_id];
+				}
+				catch (const status_exception&)
+				{
+					return P_FALSE(xdrs, p);
+				}
+			}
+			else
+			{
+				statement = port->port_statement;
+			}
+			if (!statement)
+				return P_FALSE(xdrs, p);
+
+			LocalStatus ls;
+			CheckStatusWrapper status_vector(&ls);
+
+			// Process update counters
+			for (unsigned i = 0; i < b->p_batch_updates; ++i)
+			{
+				SLONG v;
+				if (xdrs->x_op == XDR_ENCODE)
+				{
+					v = statement->rsr_batch_ics->getState(&status_vector, i);
+					P_CHECK(xdrs, p, status_vector);
+				}
+				MAP(xdr_long, v);
+				if (xdrs->x_op == XDR_DECODE)
+				{
+					statement->rsr_batch_cs->regUpdate(v);
+				}
+			}
+
+			// Process status vectors
+			unsigned pos = 0u;
+			LocalStatus to;
+			for (unsigned i = 0; i < b->p_batch_vectors; ++i, ++pos)
+			{
+				DynamicStatusVector s;
+				DynamicStatusVector* ptr = NULL;
+				if (xdrs->x_op == XDR_ENCODE)
+				{
+					pos = statement->rsr_batch_ics->findError(&status_vector, pos);
+					P_CHECK(xdrs, p, status_vector);
+					if (pos == IBatchCompletionState::NO_MORE_ERRORS)
+						return P_FALSE(xdrs, p);
+
+					statement->rsr_batch_ics->getStatus(&status_vector, &to, pos);
+					if (status_vector.getState() & IStatus::STATE_ERRORS)
+						continue;
+					s.load(&to);
+					ptr = &s;
+				}
+				MAP(xdr_u_long, pos);
+				if (!xdr_status_vector(xdrs, ptr))
+					return P_FALSE(xdrs, p);
+				if (xdrs->x_op == XDR_DECODE)
+				{
+					Firebird::Arg::StatusVector sv(ptr->value());
+					sv.copyTo(&to);
+					delete ptr;
+					statement->rsr_batch_cs->regErrorAt(pos, &to);
+				}
+			}
+
+			// Process status-less errors
+			pos = 0u;
+			for (unsigned i = 0; i < b->p_batch_errors; ++i, ++pos)
+			{
+				if (xdrs->x_op == XDR_ENCODE)
+				{
+					pos = statement->rsr_batch_ics->findError(&status_vector, pos);
+					P_CHECK(xdrs, p, status_vector);
+					if (pos == IBatchCompletionState::NO_MORE_ERRORS)
+						return P_FALSE(xdrs, p);
+
+					statement->rsr_batch_ics->getStatus(&status_vector, &to, pos);
+					if (!(status_vector.getState() & IStatus::STATE_ERRORS))
+						continue;
+				}
+				MAP(xdr_u_long, pos);
+				if (xdrs->x_op == XDR_DECODE)
+				{
+					statement->rsr_batch_cs->regErrorAt(pos, nullptr);
+				}
+			}
 
 			return P_TRUE(xdrs, p);
 		}

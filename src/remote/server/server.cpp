@@ -3319,6 +3319,13 @@ void rem_port::batch_create(P_BATCH_CREATE* batch, PACKET* sendL)
 	const UCHAR* out_blr = batch->p_batch_blr.cstr_address;
 	InternalMessageBuffer msgBuffer(out_blr_length, out_blr, 0, NULL);		// !!!!!! add explicit msg length for control
 
+	ClumpletReader rdr(ClumpletReader::WideTagged, batch->p_batch_pb.cstr_address,
+		batch->p_batch_pb.cstr_length);
+	if (rdr.getBufferLength() && (rdr.getBufferTag() != IBatch::VERSION1))
+		(Arg::Gds(isc_random) << "Invalid tag in parameters block").raise();
+	statement->rsr_batch_flags = (rdr.find(IBatch::RECORD_COUNTS) && rdr.getInt()) ?
+		(1 << IBatch::RECORD_COUNTS) : 0;
+
 	statement->rsr_batch =
 		statement->rsr_iface->createBatch(&status_vector, msgBuffer.metadata,
 			batch->p_batch_pb.cstr_length, batch->p_batch_pb.cstr_address);
@@ -3359,8 +3366,49 @@ void rem_port::batch_msg(P_BATCH_MSG* batch, PACKET* sendL)
 
 void rem_port::batch_exec(P_BATCH_EXEC* batch, PACKET* sendL)
 {
+	LocalStatus ls;
+	CheckStatusWrapper status_vector(&ls);
+
+	Rsr* statement;
+	getHandle(statement, batch->p_batch_statement);
+	statement->checkIface();
+
 	Rtr* transaction = NULL;
 	getHandle(transaction, batch->p_batch_transaction);
+
+	AutoPtr<IBatchCompletionState, SimpleDispose<IBatchCompletionState> >
+		ics(statement->rsr_batch->execute(&status_vector, transaction->rtr_iface));
+
+	if (status_vector.getState() & IStatus::STATE_ERRORS)
+	{
+		this->send_response(sendL, 0, 0, &status_vector, false);
+		return;
+	}
+
+	bool recordCounts = statement->rsr_batch_flags & (1 << IBatch::RECORD_COUNTS);
+	P_BATCH_CS* pcs = &sendL->p_batch_cs;
+	sendL->p_operation = op_batch_cs;
+	pcs->p_batch_statement = statement->rsr_id;
+	pcs->p_batch_reccount = ics->getSize(&status_vector);
+	check(&status_vector);
+	pcs->p_batch_updates = recordCounts ? pcs->p_batch_reccount : 0;
+	pcs->p_batch_errors = pcs->p_batch_vectors = 0;
+	for (unsigned int pos = 0u;
+		 (pos = ics->findError(&status_vector, pos)) != IBatchCompletionState::NO_MORE_ERRORS; ++pos)
+	{
+		check(&status_vector);
+
+		LocalStatus dummy;
+		ics->getStatus(&status_vector, &dummy, pos);
+		if (status_vector.getState() & IStatus::STATE_ERRORS)
+			pcs->p_batch_errors++;
+		else
+			pcs->p_batch_vectors++;
+	}
+	check(&status_vector);
+
+	statement->rsr_batch_ics = ics;
+	this->send(sendL);
 }
 
 

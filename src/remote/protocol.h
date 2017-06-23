@@ -280,6 +280,7 @@ enum P_OP
 	op_batch_msg			= 100,
 	op_batch_exec			= 101,
 	op_batch_rls			= 102,
+	op_batch_cs				= 103,
 
 	op_max
 };
@@ -674,6 +675,11 @@ typedef struct p_batch_exec
 
 typedef struct p_batch_cs				// completion state
 {
+    OBJCT	p_batch_statement;			// statement object
+	ULONG	p_batch_reccount;			// total records
+	ULONG	p_batch_updates;			// update counters
+	ULONG	p_batch_vectors;			// recnum + status vector pairs
+	ULONG	p_batch_errors;				// error's recnums
 } P_BATCH_CS;
 
 typedef struct p_batch_free
@@ -729,6 +735,7 @@ typedef struct packet
 	P_BATCH_MSG p_batch_msg;	// Add messages to batch
 	P_BATCH_EXEC p_batch_exec;	// Run batch
 	P_BATCH_FREE p_batch_free;	// Destroy batch
+	P_BATCH_CS p_batch_cs;
 
 public:
 	packet()

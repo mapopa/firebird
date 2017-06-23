@@ -103,6 +103,7 @@ const ULONG MAX_BATCH_CACHE_SIZE = 1024 * 1024; // 1 MB
 // fwd. decl.
 namespace Firebird {
 	class Exception;
+	class BatchCompletionState;
 }
 
 #ifdef WIN_NT
@@ -488,6 +489,12 @@ struct Rsr : public Firebird::GlobalStorage, public TypedHandle<rem_type_rsr>
 	Rsr**			rsr_self;
 
 	ULONG			rsr_batch_size;		// Aligned message size for IBatch operations
+	ULONG			rsr_batch_flags;	// Flags for batch processing
+	union								// BatchCS passed to XDR protocol
+	{
+		Firebird::IBatchCompletionState* rsr_batch_ics;	// server
+		Firebird::BatchCompletionState* rsr_batch_cs;	// client
+	};
 
 public:
 	// Values for rsr_flags.

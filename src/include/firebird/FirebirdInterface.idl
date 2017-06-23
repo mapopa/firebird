@@ -490,10 +490,6 @@ interface BatchCompletionState : Disposable
 	uint getSize(Status status);
 	int getState(Status status, uint pos);
 	uint findError(Status status, uint pos);
-
-	// Depending upon returned value (true/false) status contains
-	// an error which took place when processing record number 'pos' (when true)
-	// or an error that was thrown during method execution (when false).
 	void getStatus(Status status, Status to, uint pos);
 }
 /*

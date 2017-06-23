@@ -26,8 +26,6 @@
 #include "../common/classes/array.h"
 #include "../common/utils_proto.h"
 
-using namespace Firebird;
-
 namespace Firebird {
 
 	class Transliterate
@@ -63,12 +61,25 @@ namespace Firebird {
 			regUpdate(IBatchCompletionState::EXECUTE_FAILED);
 		}
 
+		void regErrorAt(ULONG at, IStatus* errStatus)
+		{
+			IStatus* newVector = nullptr;
+			if ((rare.getCount() < detailedLimit) && errStatus)
+				newVector = errStatus->clone();
+			rare.add(StatusPair(at, newVector));
+		}
+
 		void regUpdate(SLONG count)
 		{
 			if (array)
 				array->push(count);
 
 			++reccount;
+		}
+
+		void regSize(ULONG total)
+		{
+			reccount = total;
 		}
 
 		// IBatchCompletionState implementation
