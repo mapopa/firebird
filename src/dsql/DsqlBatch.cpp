@@ -393,7 +393,7 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 	if (!m_messages.done())
 	{
 		ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
-			  Arg::Gds(isc_random) << "Internal buffer overflow - batch too big");
+			  Arg::Gds(isc_random) << "Internal message buffer overflow - batch too big");
 	}
 
 	// insert blobs here
@@ -405,7 +405,7 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 		if (!m_blobs.done())
 		{
 			ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
-				  Arg::Gds(isc_random) << "Internal buffer overflow - batch too big");
+				  Arg::Gds(isc_random) << "Internal BLOB buffer overflow - batch too big");
 		}
 
 		ULONG remains;
@@ -709,7 +709,7 @@ bool DsqlBatch::DataCache::done()
 	fb_assert(m_cache);
 
 	if (m_cache->getCount() == 0 && m_used == 0)
-		return false;
+		return true;	// false?
 
 	if (m_cache->getCount() && m_used)
 	{

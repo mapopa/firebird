@@ -196,7 +196,7 @@ MetadataFromBlr::MetadataFromBlr(unsigned aBlrLength, const unsigned char* aBlr,
 
 	makeOffsets();
 
-	if (rdr.getByte() != (UCHAR) blr_end || (aLength && (length != aLength)))
+	if (rdr.getByte() != (UCHAR) blr_end || length != aLength)
 	{
 		(Arg::Gds(isc_sqlerr) << Arg::Num(-804) <<
 		 Arg::Gds(isc_dsql_sqlda_err)

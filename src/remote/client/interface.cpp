@@ -55,6 +55,7 @@
 #include "../yvalve/gds_proto.h"
 #include "../common/isc_f_proto.h"
 #include "../common/classes/ClumpletWriter.h"
+#include "../common/classes/BatchCompletionState.h"
 #include "../common/config/config.h"
 #include "../common/utils_proto.h"
 #include "../common/classes/DbImplementation.h"
@@ -314,31 +315,34 @@ public:
 	unsigned getBlobAlignment(Firebird::CheckStatusWrapper* status);
 
 	Batch(Statement* s, IMessageMetadata* inFmt, unsigned parLength, const unsigned char* par)
-		: rdr(getPool(), ClumpletReader::WideTagged, par, parLength),
-		  messageSize(0), alignedSize(0),
+		: messageSize(0), alignedSize(0), flags(0),
 		  stmt(s), format(inFmt), tmpStatement(false)
 	{
 		LocalStatus ls;
 		CheckStatusWrapper st(&ls);
 
 		messageSize = format->getMessageLength(&st);
+		check(&st);
 		alignedSize = format->getAlignedLength(&st);
+		check(&st);
+
+		ClumpletReader rdr(ClumpletReader::WideTagged, par, parLength);
 
 		for (rdr.rewind(); !rdr.isEof(); rdr.moveNext())
 		{
 			UCHAR t = rdr.getClumpTag();
-/*			switch(t)
+			switch(t)
 			{
 			case IBatch::MULTIERROR:
 			case IBatch::RECORD_COUNTS:
-				if (pb.getInt())
-					m_flags |= (1 << t);
+				if (rdr.getInt())
+					flags |= (1 << t);
 				else
-					m_flags &= ~(1 << t);
+					flags &= ~(1 << t);
 				break;
-
+/*
 			case IBatch::BLOB_IDS:
-				m_blobPolicy = pb.getInt();
+				m_blobPolicy = rdr.getInt();
 				switch(m_blobPolicy)
 				{
 				case IBatch::BLOB_IDS_ENGINE:
@@ -352,17 +356,17 @@ public:
 				break;
 
 			case IBatch::DETAILED_ERRORS:
-				m_detailed = pb.getInt();
+				m_detailed = rdr.getInt();
 				if (m_detailed > DETAILED_LIMIT * 4)
 					m_detailed = DETAILED_LIMIT * 4;
 				break;
 
 			case IBatch::BUFFER_BYTES_SIZE:
-				m_bufferSize = pb.getInt();
+				m_bufferSize = rdr.getInt();
 				if (m_bufferSize > BUFFER_LIMIT * 4)
 					m_bufferSize = BUFFER_LIMIT * 4;
-				break;
-			}*/
+				break;*/
+			}
 		}
 	}
 
@@ -371,8 +375,7 @@ private:
 	void freeClientData(CheckStatusWrapper* status, bool force = false);
 	void releaseStatement();
 
-	ClumpletReader rdr;
-	ULONG messageSize, alignedSize;
+	ULONG messageSize, alignedSize, flags;
 	Statement* stmt;
 	RefPtr<IMessageMetadata> format;
 
@@ -2021,11 +2024,15 @@ Batch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMe
 		CHECK_HANDLE(rdb, isc_bad_db_handle);
 		rem_port* port = rdb->rdb_port;
 
+		if (port->port_protocol < PROTOCOL_VERSION16)
+			unsupported();
+
 		// Build input BLR
 		RefPtr<IMessageMetadata> meta;
 		if (!inMetadata)
 		{
 			meta.assignRefNoIncr(getInputMetadata(status));
+			check(status);
 			inMetadata = meta;
 		}
 		BlrFromMessage inBlr(inMetadata, dialect, port->port_protocol);
@@ -2075,6 +2082,8 @@ Batch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMe
 		batch->p_batch_statement = statement->rsr_id;
 		batch->p_batch_blr.cstr_length = in_blr_length;
 		batch->p_batch_blr.cstr_address = in_blr;
+		batch->p_batch_msglen = inMetadata->getMessageLength(status);
+		check(status);
 		batch->p_batch_pb.cstr_length = parLength;
 		batch->p_batch_pb.cstr_address = par;
 
@@ -2188,7 +2197,6 @@ void Batch::registerBlob(CheckStatusWrapper* status, const ISC_QUAD* existingBlo
 
 IBatchCompletionState* Batch::execute(CheckStatusWrapper* status, ITransaction* apiTra)
 {
-	IBatchCompletionState* cs = nullptr;
 	try
 	{
 		// Check and validate handles, etc.
@@ -2219,15 +2227,35 @@ IBatchCompletionState* Batch::execute(CheckStatusWrapper* status, ITransaction* 
 		P_BATCH_EXEC* batch = &packet->p_batch_exec;
 		batch->p_batch_statement = statement->rsr_id;
 		batch->p_batch_transaction = transaction->rtr_id;
+		send_packet(port, packet);
 
-		send_and_receive(status, rdb, packet);
+		statement->rsr_batch_size = alignedSize;
+		statement->rsr_batch_flags = flags;
+		AutoPtr<BatchCompletionState, SimpleDispose<BatchCompletionState> >
+			cs(FB_NEW BatchCompletionState(flags & (1 << IBatch::RECORD_COUNTS), 256));
+		statement->rsr_batch_cs = cs;
+		receive_packet(port, packet);
+		statement->rsr_batch_cs = nullptr;
+
+		switch (packet->p_operation)
+		{
+		case op_response:
+			REMOTE_check_response(status, rdb, packet);
+			break;
+
+		case op_batch_cs:
+			return cs.release();
+
+		default:
+			(Arg::Gds(isc_random) << "Unexpected packet type").raise();
+			break;
+		}
 	}
 	catch (const Exception& ex)
 	{
 		ex.stuffException(status);
-		return NULL;
 	}
-	return cs;
+	return nullptr;
 }
 
 
@@ -2258,19 +2286,6 @@ void Batch::freeClientData(CheckStatusWrapper* status, bool force)
 		Rdb* rdb = statement->rsr_rdb;
 		rem_port* port = rdb->rdb_port;
 		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
-
-/*		if (statement->rsr_flags.test(Rsr::LAZY))
-		{
-			statement->rsr_flags.clear(Rsr::FETCHED);
-			statement->rsr_rtr = NULL;
-
-			clear_queue(rdb->rdb_port);
-			REMOTE_reset_statement(statement);
-
-			releaseStatement();
-			return;
-		}
- */
 
 		PACKET* packet = &rdb->rdb_packet;
 		packet->p_operation = op_batch_rls;
@@ -7780,7 +7795,8 @@ static void send_packet(rem_port* port, PACKET* packet)
 			if (!p->sent)
 			{
 				if (!port->send_partial(&p->packet))
-					Arg::Gds(isc_net_write_err).raise();
+					(Arg::Gds(isc_net_write_err) <<
+					 Arg::Gds(isc_random) << "send_packet/send_partial").raise();
 
 				p->sent = true;
 			}
@@ -7789,7 +7805,7 @@ static void send_packet(rem_port* port, PACKET* packet)
 
 	if (!port->send(packet))
 	{
-		Arg::Gds(isc_net_write_err).raise();
+		(Arg::Gds(isc_net_write_err)<< Arg::Gds(isc_random) << "send_packet/send").raise();
 	}
 }
 
@@ -7827,7 +7843,8 @@ static void send_partial_packet(rem_port* port, PACKET* packet)
 		{
 			if (!port->send_partial(&p->packet))
 			{
-				Arg::Gds(isc_net_write_err).raise();
+				(Arg::Gds(isc_net_write_err) <<
+				 Arg::Gds(isc_random) << "send_partial_packet/send_partial").raise();
 			}
 			p->sent = true;
 		}
@@ -7835,7 +7852,8 @@ static void send_partial_packet(rem_port* port, PACKET* packet)
 
 	if (!port->send_partial(packet))
 	{
-		Arg::Gds(isc_net_write_err).raise();
+		(Arg::Gds(isc_net_write_err) <<
+		 Arg::Gds(isc_random) << "send_partial_packet/send").raise();
 	}
 }
 

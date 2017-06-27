@@ -3315,9 +3315,42 @@ void rem_port::batch_create(P_BATCH_CREATE* batch, PACKET* sendL)
 	getHandle(statement, batch->p_batch_statement);
 	statement->checkIface();
 
-	const ULONG out_blr_length = batch->p_batch_blr.cstr_length;
-	const UCHAR* out_blr = batch->p_batch_blr.cstr_address;
-	InternalMessageBuffer msgBuffer(out_blr_length, out_blr, 0, NULL);		// !!!!!! add explicit msg length for control
+	const ULONG blr_length = batch->p_batch_blr.cstr_length;
+	const UCHAR* blr = batch->p_batch_blr.cstr_address;
+	if (!blr)
+		(Arg::Gds(isc_random) << "Missing required format info in createBatch()").raise();
+	InternalMessageBuffer msgBuffer(blr_length, blr, batch->p_batch_msglen, NULL);
+
+	// Flush out any previous format information
+	// that might be hanging around from an earlier execution.
+
+	delete statement->rsr_bind_format;
+	statement->rsr_bind_format = PARSE_msg_format(blr, blr_length);
+
+	// If we know the length of the message, make sure there is a buffer
+	// large enough to hold it.
+
+	if (!(statement->rsr_format = statement->rsr_bind_format))
+		(Arg::Gds(isc_random) << "Error parsing message format in createBatch()").raise();
+
+	RMessage* message = statement->rsr_buffer;
+	if (!message || statement->rsr_format->fmt_length > statement->rsr_fmt_length)
+	{
+		RMessage* const org_message = message;
+		const ULONG org_length = message ? statement->rsr_fmt_length : 0;
+		statement->rsr_fmt_length = statement->rsr_format->fmt_length;
+		statement->rsr_buffer = message = FB_NEW RMessage(statement->rsr_fmt_length);
+		statement->rsr_message = message;
+		message->msg_next = message;
+		if (org_length)
+		{
+			// dimitr:	the original buffer might have something useful inside
+			//			(filled by a prior xdr_sql_message() call, for example),
+			//			so its contents must be preserved (see CORE-3730)
+			memcpy(message->msg_buffer, org_message->msg_buffer, org_length);
+		}
+		REMOTE_release_messages(org_message);
+	}
 
 	ClumpletReader rdr(ClumpletReader::WideTagged, batch->p_batch_pb.cstr_address,
 		batch->p_batch_pb.cstr_length);
@@ -3394,7 +3427,8 @@ void rem_port::batch_exec(P_BATCH_EXEC* batch, PACKET* sendL)
 	pcs->p_batch_updates = recordCounts ? pcs->p_batch_reccount : 0;
 	pcs->p_batch_errors = pcs->p_batch_vectors = 0;
 	for (unsigned int pos = 0u;
-		 (pos = ics->findError(&status_vector, pos)) != IBatchCompletionState::NO_MORE_ERRORS; ++pos)
+		 (pos = ics->findError(&status_vector, pos)) != IBatchCompletionState::NO_MORE_ERRORS;
+		 ++pos)
 	{
 		check(&status_vector);
 
@@ -3414,9 +3448,18 @@ void rem_port::batch_exec(P_BATCH_EXEC* batch, PACKET* sendL)
 
 void rem_port::batch_rls(P_BATCH_FREE* batch, PACKET* sendL)
 {
+	LocalStatus ls;
+	CheckStatusWrapper status_vector(&ls);
+
+	Rsr* statement;
+	getHandle(statement, batch->p_batch_statement);
+	statement->checkIface();
+
+	statement->rsr_batch->release();
+	statement->rsr_batch = nullptr;
+
+	this->send_response(sendL, 0, 0, &status_vector, true);
 }
-
-
 
 
 ISC_STATUS rem_port::execute_statement(P_OP op, P_SQLDATA* sqldata, PACKET* sendL)

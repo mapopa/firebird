@@ -826,6 +826,7 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			P_BATCH_CREATE* b = &p->p_batch_create;
 			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
 			MAP(xdr_cstring_const, b->p_batch_blr);
+			MAP(xdr_u_long, b->p_batch_msglen);
 			MAP(xdr_cstring_const, b->p_batch_pb);
 
 			DEBUG_PRINTSIZE(xdrs, p->p_operation);
@@ -885,6 +886,7 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 
 			while (count--)
 			{
+				DEB_BATCH(fprintf(stderr, "BatRem: xdr packed msg\n"));
 				if (!xdr_packed_message(xdrs, message, statement->rsr_format))
 					return P_FALSE(xdrs, p);
 				message->msg_address += statement->rsr_batch_size;
@@ -901,6 +903,9 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			P_BATCH_EXEC* b = &p->p_batch_exec;
 			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
 			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_transaction));
+
+			if (xdrs->x_op != XDR_FREE)
+				DEB_BATCH(fprintf(stderr, "BatRem: xdr execute\n"));
 
 			return P_TRUE(xdrs, p);
 		}
@@ -919,6 +924,7 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 
 			rem_port* port = (rem_port*) xdrs->x_public;
 			SSHORT statement_id = b->p_batch_statement;
+			DEB_BATCH(fprintf(stderr, "BatRem: xdr CS %d\n", statement_id));
 			Rsr* statement;
 			if (statement_id >= 0)
 			{
@@ -944,7 +950,14 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			LocalStatus ls;
 			CheckStatusWrapper status_vector(&ls);
 
+			if ((xdrs->x_op == XDR_DECODE) && (!b->p_batch_updates))
+			{
+				DEB_BATCH(fprintf(stderr, "BatRem: xdr reccount=%d\n", b->p_batch_reccount));
+				statement->rsr_batch_cs->regSize(b->p_batch_reccount);
+			}
+
 			// Process update counters
+			DEB_BATCH(fprintf(stderr, "BatRem: xdr up %d\n", b->p_batch_updates));
 			for (unsigned i = 0; i < b->p_batch_updates; ++i)
 			{
 				SLONG v;
@@ -963,6 +976,7 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			// Process status vectors
 			unsigned pos = 0u;
 			LocalStatus to;
+			DEB_BATCH(fprintf(stderr, "BatRem: xdr sv %d\n", b->p_batch_vectors));
 			for (unsigned i = 0; i < b->p_batch_vectors; ++i, ++pos)
 			{
 				DynamicStatusVector s;
@@ -994,6 +1008,7 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 
 			// Process status-less errors
 			pos = 0u;
+			DEB_BATCH(fprintf(stderr, "BatRem: xdr err %d\n", b->p_batch_errors));
 			for (unsigned i = 0; i < b->p_batch_errors; ++i, ++pos)
 			{
 				if (xdrs->x_op == XDR_ENCODE)
@@ -1013,6 +1028,17 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 					statement->rsr_batch_cs->regErrorAt(pos, nullptr);
 				}
 			}
+
+			return P_TRUE(xdrs, p);
+		}
+
+	case op_batch_rls:
+		{
+			P_BATCH_FREE* b = &p->p_batch_free;
+			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
+
+			if (xdrs->x_op != XDR_FREE)
+				DEB_BATCH(fprintf(stderr, "BatRem: xdr release\n"));
 
 			return P_TRUE(xdrs, p);
 		}

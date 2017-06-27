@@ -657,6 +657,7 @@ typedef struct p_batch_create
 {
     OBJCT			p_batch_statement;	// statement object
     CSTRING_CONST	p_batch_blr;		// blr describing input messages
+    ULONG			p_batch_msglen;		// explicit message length
     CSTRING_CONST   p_batch_pb;			// parameters block
 } P_BATCH_CREATE;
 
