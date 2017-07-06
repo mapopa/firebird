@@ -281,6 +281,8 @@ enum P_OP
 	op_batch_exec			= 101,
 	op_batch_rls			= 102,
 	op_batch_cs				= 103,
+	op_batch_blob			= 104,
+	op_batch_addblob		= 105,
 
 	op_max
 };
@@ -688,6 +690,13 @@ typedef struct p_batch_free
 	OBJCT	p_batch_statement;			// statement object
 } P_BATCH_FREE;
 
+typedef struct p_batch_blob
+{
+	OBJCT			p_batch_statement;	// statement object
+	SQUAD			p_batch_blob_id;	// blob id
+	CSTRING_CONST	p_batch_blob_data;	// data
+} P_BATCH_BLOB;
+
 
 // Generalize packet (sic!)
 
@@ -736,7 +745,8 @@ typedef struct packet
 	P_BATCH_MSG p_batch_msg;	// Add messages to batch
 	P_BATCH_EXEC p_batch_exec;	// Run batch
 	P_BATCH_FREE p_batch_free;	// Destroy batch
-	P_BATCH_CS p_batch_cs;
+	P_BATCH_CS p_batch_cs;		// Batch completion state
+	P_BATCH_BLOB p_batch_blob;	// BLOB in batch
 
 public:
 	packet()

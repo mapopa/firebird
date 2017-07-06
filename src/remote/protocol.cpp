@@ -1043,6 +1043,18 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			return P_TRUE(xdrs, p);
 		}
 
+	case op_batch_blob:
+	case op_batch_addblob:
+		{
+			P_BATCH_BLOB* b = &p->p_batch_blob;
+			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
+			if (p->p_operation == op_batch_blob)
+				MAP(xdr_quad, b->p_batch_blob_id);
+			MAP(xdr_cstring_const, b->p_batch_blob_data);
+
+			return P_TRUE(xdrs, p);
+		}
+
 	///case op_insert:
 	default:
 #ifdef DEV_BUILD

@@ -1969,6 +1969,14 @@ static void sql_info(thread_db* tdbb,
 				return;
 			break;
 
+		case isc_info_sql_stmt_blob_align:
+			value = DsqlBatch::BLOB_STREAM_ALIGN;
+
+			length = put_vax_long(buffer, value);
+			if (!(info = put_item(item, length, buffer, info, end_info)))
+				return;
+			break;
+
 		case isc_info_sql_get_plan:
 		case isc_info_sql_explain_plan:
 			{

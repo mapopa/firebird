@@ -545,6 +545,7 @@ public:
 	static ISC_STATUS badHandle() { return isc_bad_req_handle; }
 	void checkIface(ISC_STATUS code = isc_unprepared_stmt);
 	void checkCursor();
+	void checkBatch();
 };
 
 
@@ -1226,6 +1227,7 @@ public:
 	void		start_crypt(P_CRYPT*, PACKET*);
 	void		batch_create(P_BATCH_CREATE*, PACKET*);
 	void		batch_msg(P_BATCH_MSG*, PACKET*);
+	void		batch_blob(P_BATCH_BLOB*, PACKET*, bool addData);
 	void		batch_exec(P_BATCH_EXEC*, PACKET*);
 	void		batch_rls(P_BATCH_FREE*, PACKET*);
 
