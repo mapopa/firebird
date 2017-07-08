@@ -362,7 +362,6 @@ public:
 	}
 
 private:
-	//void releaseBatch();
 	void freeClientData(CheckStatusWrapper* status, bool force = false);
 	void releaseStatement();
 
@@ -2271,6 +2270,31 @@ void Batch::registerBlob(CheckStatusWrapper* status, const ISC_QUAD* existingBlo
 {
 	try
 	{
+		// Check and validate handles, etc.
+
+		if (!stmt)
+		{
+			Arg::Gds(isc_bad_req_handle).raise();
+		}
+		Rsr* statement = stmt->getStatement();
+		CHECK_HANDLE(statement, isc_bad_req_handle);
+		Rdb* rdb = statement->rsr_rdb;
+		CHECK_HANDLE(rdb, isc_bad_db_handle);
+		rem_port* port = rdb->rdb_port;
+		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
+
+		if (blobPolicy == IBatch::BLOB_IDS_ENGINE)
+			genBlobId(blobId);
+
+		PACKET* packet = &rdb->rdb_packet;
+		packet->p_operation = op_batch_regblob;
+		P_BATCH_REGBLOB* batch = &packet->p_batch_regblob;
+		batch->p_batch_statement = statement->rsr_id;
+		batch->p_batch_exist_id = *existingBlob;
+		batch->p_batch_blob_id = *blobId;
+
+		send_partial_packet(port, packet);
+		defer_packet(port, packet, true);
 	}
 	catch (const Exception& ex)
 	{

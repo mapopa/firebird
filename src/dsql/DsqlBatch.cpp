@@ -365,18 +365,27 @@ void DsqlBatch::addBlobStream(thread_db* tdbb, unsigned length, const void* inBu
 	m_blobs.put(inBuffer, length);
 }
 
-void DsqlBatch::registerBlob(thread_db* tdbb, const ISC_QUAD* existingBlob, ISC_QUAD* blobId)
+void DsqlBatch::registerBlob(thread_db*, const ISC_QUAD* existingBlob, ISC_QUAD* blobId)
 {
 	blobCheckMeta();
 
-	ISC_QUAD* idPtr = m_blobMap.put(*existingBlob);
+	// Generate auto blob ID if needed
+	if (m_blobPolicy == IBatch::BLOB_IDS_ENGINE)
+		genBlobId(blobId);
+
+	registerBlob(existingBlob, blobId);
+}
+
+void DsqlBatch::registerBlob(const ISC_QUAD* engineBlob, const ISC_QUAD* batchBlob)
+{
+	ISC_QUAD* idPtr = m_blobMap.put(*batchBlob);
 	if (!idPtr)
 	{
 		ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
 			Arg::Gds(isc_random) << "Repeated BlobId in registerBlob(): is ***");
 	}
 
-	*idPtr = *blobId;
+	*idPtr = *engineBlob;
 }
 
 Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
@@ -452,7 +461,7 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 						// create blob
 						bid engineBlobId;
 						blob = blb::create2(tdbb, transaction, &engineBlobId, sizeof(blobParameters), blobParameters, true);
-						registerBlob(tdbb, batchBlobId, reinterpret_cast<ISC_QUAD*>(&engineBlobId));
+						registerBlob(reinterpret_cast<ISC_QUAD*>(&engineBlobId), batchBlobId);
 					}
 
 					// store data

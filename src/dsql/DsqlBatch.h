@@ -85,6 +85,7 @@ private:
 	void blobPrepare();
 	void blobCheckMode(bool stream, const char* fname);
 	void blobCheckMeta();
+	void registerBlob(const ISC_QUAD* engineBlob, const ISC_QUAD* batchBlob);
 
 	dsql_req* const m_request;
 	JBatch* m_batch;

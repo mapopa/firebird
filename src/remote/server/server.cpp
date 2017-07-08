@@ -2061,7 +2061,7 @@ void Rsr::checkCursor()
 
 void Rsr::checkBatch()
 {
-	if (!rsr_cursor)
+	if (!rsr_batch)
 		(Arg::Gds(isc_random) << "Batch is not created").raise();
 }
 
@@ -3437,6 +3437,23 @@ void rem_port::batch_blob(P_BATCH_BLOB* batch, PACKET* sendL, bool addData)
 }
 
 
+void rem_port::batch_regblob(P_BATCH_REGBLOB* batch, PACKET* sendL)
+{
+	LocalStatus ls;
+	CheckStatusWrapper status_vector(&ls);
+
+	Rsr* statement;
+	getHandle(statement, batch->p_batch_statement);
+	statement->checkIface();
+	statement->checkBatch();
+
+	statement->rsr_batch->registerBlob(&status_vector, &batch->p_batch_exist_id,
+		&batch->p_batch_blob_id);
+
+	this->send_response(sendL, 0, 0, &status_vector, true);
+}
+
+
 void rem_port::batch_exec(P_BATCH_EXEC* batch, PACKET* sendL)
 {
 	LocalStatus ls;
@@ -4738,6 +4755,10 @@ static bool process_packet(rem_port* port, PACKET* sendL, PACKET* receive, rem_p
 		case op_batch_blob:
 		case op_batch_addblob:
 			port->batch_blob(&receive->p_batch_blob, sendL, op == op_batch_addblob);
+			break;
+
+		case op_batch_regblob:
+			port->batch_regblob(&receive->p_batch_regblob, sendL);
 			break;
 
 
