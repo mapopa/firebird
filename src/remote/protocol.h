@@ -284,6 +284,7 @@ enum P_OP
 	op_batch_blob			= 104,
 	op_batch_addblob		= 105,
 	op_batch_regblob		= 106,
+	op_batch_blob_stream	= 107,
 
 	op_max
 };
@@ -695,7 +696,7 @@ typedef struct p_batch_blob
 {
 	OBJCT			p_batch_statement;	// statement object
 	SQUAD			p_batch_blob_id;	// blob id
-	CSTRING_CONST	p_batch_blob_data;	// data
+	CSTRING			p_batch_blob_data;	// data
 } P_BATCH_BLOB;
 
 typedef struct p_batch_regblob

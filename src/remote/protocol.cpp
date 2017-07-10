@@ -1050,7 +1050,7 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
 			if (p->p_operation == op_batch_blob)
 				MAP(xdr_quad, b->p_batch_blob_id);
-			MAP(xdr_cstring_const, b->p_batch_blob_data);
+			MAP(xdr_cstring, b->p_batch_blob_data);
 
 			return P_TRUE(xdrs, p);
 		}
@@ -1064,6 +1064,112 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 
 			return P_TRUE(xdrs, p);
 		}
+
+	case op_batch_blob_stream:
+		{
+			P_BATCH_BLOB* b = &p->p_batch_blob;
+			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
+			if (xdrs->x_op == XDR_FREE)
+			{
+				MAP(xdr_cstring, b->p_batch_blob_data);
+				return P_TRUE(xdrs, p);
+			}
+			MAP(xdr_u_long, b->p_batch_blob_data.cstr_length);
+
+			rem_port* port = (rem_port*) xdrs->x_public;
+			SSHORT statement_id = b->p_batch_statement;
+			Rsr* statement;
+			if (statement_id >= 0)
+			{
+				if (static_cast<ULONG>(statement_id) >= port->port_objects.getCount())
+					return P_FALSE(xdrs, p);
+
+				try
+				{
+					statement = port->port_objects[statement_id];
+				}
+				catch (const status_exception&)
+				{
+					return P_FALSE(xdrs, p);
+				}
+			}
+			else
+			{
+				statement = port->port_statement;
+			}
+			if (!statement)
+				return P_FALSE(xdrs, p);
+
+			ULONG size = b->p_batch_blob_data.cstr_length;
+			fb_assert(!(size & 3));		// according to current blob stream alignment
+			if (!size)
+			{
+				return P_TRUE(xdrs, p);
+			}
+			if (xdrs->x_op == XDR_DECODE)
+			{
+				alloc_cstring(xdrs, &b->p_batch_blob_data);
+			}
+
+			ULONG& currentBlobSize(statement->rsr_batch_blob_size);
+			UCHAR* s = b->p_batch_blob_data.cstr_address;
+
+			while (size)
+			{
+				if (currentBlobSize)
+				{
+					// transfer of current blob is not complete
+					ULONG portion = currentBlobSize;
+					if (portion > size)
+						portion = size;
+
+					switch (xdrs->x_op)
+					{
+					case XDR_ENCODE:
+						if (!xdrs->x_ops->x_putbytes(xdrs,
+							reinterpret_cast<const SCHAR*>(s), portion))
+						{
+							return P_FALSE(xdrs, p);
+						}
+						break;
+
+					case XDR_DECODE:
+						if (!xdrs->x_ops->x_getbytes(xdrs,
+							reinterpret_cast<SCHAR*>(s), portion))
+						{
+							return P_FALSE(xdrs, p);
+						}
+					}
+
+					size -= portion;
+					s += portion;
+					currentBlobSize -= portion;
+
+					continue;
+				}
+
+				// We are at blob header in the stream - parse it
+				fb_assert(intptr_t(s) % 4 == 0);
+
+				// safety check
+				const ULONG SIZEOF_BLOB_HEAD = sizeof(ISC_QUAD) + sizeof(ULONG);
+				if (size < SIZEOF_BLOB_HEAD)
+					return P_FALSE(xdrs, p);
+
+				ISC_QUAD* batchBlobId = reinterpret_cast<ISC_QUAD*>(s);
+				ULONG* blobSize = reinterpret_cast<ULONG*>(s + sizeof(ISC_QUAD));
+
+				MAP(xdr_quad, *batchBlobId);
+				MAP(xdr_u_long, *blobSize);
+
+				currentBlobSize = *blobSize;
+				s += SIZEOF_BLOB_HEAD;
+				size -= SIZEOF_BLOB_HEAD;
+			}
+
+			return P_TRUE(xdrs, p);
+		}
+
 
 	///case op_insert:
 	default:

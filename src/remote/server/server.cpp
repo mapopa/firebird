@@ -3416,7 +3416,7 @@ void rem_port::batch_msg(P_BATCH_MSG* batch, PACKET* sendL)
 }
 
 
-void rem_port::batch_blob(P_BATCH_BLOB* batch, PACKET* sendL, bool addData)
+void rem_port::batch_blob(P_OP op, P_BATCH_BLOB* batch, PACKET* sendL)
 {
 	LocalStatus ls;
 	CheckStatusWrapper status_vector(&ls);
@@ -3426,12 +3426,23 @@ void rem_port::batch_blob(P_BATCH_BLOB* batch, PACKET* sendL, bool addData)
 	statement->checkIface();
 	statement->checkBatch();
 
-	if (!addData)
+	switch(op)
+	{
+	case op_batch_blob:
 		statement->rsr_batch->addBlob(&status_vector, batch->p_batch_blob_data.cstr_length,
 			batch->p_batch_blob_data.cstr_address, &batch->p_batch_blob_id);
-	else
+		break;
+
+	case op_batch_addblob:
 		statement->rsr_batch->appendBlobData(&status_vector,
 			batch->p_batch_blob_data.cstr_length, batch->p_batch_blob_data.cstr_address);
+		break;
+
+	case op_batch_blob_stream:
+		statement->rsr_batch->addBlobStream(&status_vector,
+			batch->p_batch_blob_data.cstr_length, batch->p_batch_blob_data.cstr_address);
+		break;
+	}
 
 	this->send_response(sendL, 0, 0, &status_vector, true);
 }
@@ -4754,7 +4765,8 @@ static bool process_packet(rem_port* port, PACKET* sendL, PACKET* receive, rem_p
 
 		case op_batch_blob:
 		case op_batch_addblob:
-			port->batch_blob(&receive->p_batch_blob, sendL, op == op_batch_addblob);
+		case op_batch_blob_stream:
+			port->batch_blob(op, &receive->p_batch_blob, sendL);
 			break;
 
 		case op_batch_regblob:

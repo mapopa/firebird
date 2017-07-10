@@ -2166,7 +2166,7 @@ void Batch::addBlob(CheckStatusWrapper* status, unsigned length, const void* inB
 		P_BATCH_BLOB* batch = &packet->p_batch_blob;
 		batch->p_batch_statement = statement->rsr_id;
 		batch->p_batch_blob_id = *blobId;
-		batch->p_batch_blob_data.cstr_address = (const UCHAR*)inBuffer;
+		batch->p_batch_blob_data.cstr_address = (UCHAR*)inBuffer;
 		batch->p_batch_blob_data.cstr_length = length;
 
 		send_partial_packet(port, packet);
@@ -2200,7 +2200,7 @@ void Batch::appendBlobData(CheckStatusWrapper* status, unsigned length, const vo
 		packet->p_operation = op_batch_addblob;
 		P_BATCH_BLOB* batch = &packet->p_batch_blob;
 		batch->p_batch_statement = statement->rsr_id;
-		batch->p_batch_blob_data.cstr_address = (const UCHAR*)inBuffer;
+		batch->p_batch_blob_data.cstr_address = (UCHAR*)inBuffer;
 		batch->p_batch_blob_data.cstr_length = length;
 
 		send_partial_packet(port, packet);
@@ -2217,6 +2217,28 @@ void Batch::addBlobStream(CheckStatusWrapper* status, uint length, const void* i
 {
 	try
 	{
+		// Check and validate handles, etc.
+
+		if (!stmt)
+		{
+			Arg::Gds(isc_bad_req_handle).raise();
+		}
+		Rsr* statement = stmt->getStatement();
+		CHECK_HANDLE(statement, isc_bad_req_handle);
+		Rdb* rdb = statement->rsr_rdb;
+		CHECK_HANDLE(rdb, isc_bad_db_handle);
+		rem_port* port = rdb->rdb_port;
+		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
+
+		PACKET* packet = &rdb->rdb_packet;
+		packet->p_operation = op_batch_blob_stream;
+		P_BATCH_BLOB* batch = &packet->p_batch_blob;
+		batch->p_batch_statement = statement->rsr_id;
+		batch->p_batch_blob_data.cstr_address = (UCHAR*)inBuffer;
+		batch->p_batch_blob_data.cstr_length = length;
+
+		send_partial_packet(port, packet);
+		defer_packet(port, packet, true);
 	}
 	catch (const Exception& ex)
 	{
@@ -2257,6 +2279,8 @@ unsigned Batch::getBlobAlignment(CheckStatusWrapper* status)
 		}
 		else
 			(Arg::Gds(isc_random) << "Unexpected info buffer structure").raise();
+
+		return blobAlign;
 	}
 	catch (const Exception& ex)
 	{
