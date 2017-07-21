@@ -252,6 +252,12 @@ DsqlBatch* DsqlBatch::open(thread_db* tdbb, dsql_req* req, IMessageMetadata* inM
 	return b;
 }
 
+IMessageMetadata* DsqlBatch::getMetadata(thread_db* tdbb)
+{
+	m_meta->addRef();
+	return m_meta;
+}
+
 void DsqlBatch::add(thread_db* tdbb, ULONG count, const void* inBuffer)
 {
 	if (!count)

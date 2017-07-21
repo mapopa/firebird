@@ -481,6 +481,7 @@ interface Batch : ReferenceCounted
 	BatchCompletionState execute(Status status, Transaction transaction);
 	void cancel(Status status);
 	uint getBlobAlignment(Status status);
+	MessageMetadata getMetadata(Status status);
 }
 
 interface BatchCompletionState : Disposable

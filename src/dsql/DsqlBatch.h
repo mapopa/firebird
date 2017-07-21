@@ -78,6 +78,7 @@ public:
 	void addBlobStream(thread_db* tdbb, uint length, const void* inBuffer);
 	void registerBlob(thread_db* tdbb, const ISC_QUAD* existingBlob, ISC_QUAD* blobId);
 	Firebird::IBatchCompletionState* execute(thread_db* tdbb);
+	Firebird::IMessageMetadata* getMetadata(thread_db* tdbb);
 	void cancel(thread_db* tdbb);
 
 private:

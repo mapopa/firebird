@@ -313,6 +313,7 @@ public:
 	Firebird::IBatchCompletionState* execute(Firebird::CheckStatusWrapper* status, Firebird::ITransaction* transaction);
 	void cancel(Firebird::CheckStatusWrapper* status);
 	unsigned getBlobAlignment(Firebird::CheckStatusWrapper* status);
+	Firebird::IMessageMetadata* getMetadata(Firebird::CheckStatusWrapper* status);
 
 	Batch(Statement* s, IMessageMetadata* inFmt, unsigned parLength, const unsigned char* par)
 		: messageSize(0), alignedSize(0), flags(0), stmt(s),
@@ -2287,6 +2288,15 @@ unsigned Batch::getBlobAlignment(CheckStatusWrapper* status)
 		ex.stuffException(status);
 	}
 	return 0;
+}
+
+
+IMessageMetadata* Batch::getMetadata(CheckStatusWrapper* status)
+{
+	reset(status);
+
+	format->addRef();
+	return format;
 }
 
 

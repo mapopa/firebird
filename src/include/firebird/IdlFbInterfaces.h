@@ -1762,6 +1762,7 @@ namespace Firebird
 			IBatchCompletionState* (CLOOP_CARG *execute)(IBatch* self, IStatus* status, ITransaction* transaction) throw();
 			void (CLOOP_CARG *cancel)(IBatch* self, IStatus* status) throw();
 			unsigned (CLOOP_CARG *getBlobAlignment)(IBatch* self, IStatus* status) throw();
+			IMessageMetadata* (CLOOP_CARG *getMetadata)(IBatch* self, IStatus* status) throw();
 		};
 
 	protected:
@@ -1843,6 +1844,14 @@ namespace Firebird
 		{
 			StatusType::clearException(status);
 			unsigned ret = static_cast<VTable*>(this->cloopVTable)->getBlobAlignment(this, status);
+			StatusType::checkException(status);
+			return ret;
+		}
+
+		template <typename StatusType> IMessageMetadata* getMetadata(StatusType* status)
+		{
+			StatusType::clearException(status);
+			IMessageMetadata* ret = static_cast<VTable*>(this->cloopVTable)->getMetadata(this, status);
 			StatusType::checkException(status);
 			return ret;
 		}
@@ -8955,6 +8964,7 @@ namespace Firebird
 					this->execute = &Name::cloopexecuteDispatcher;
 					this->cancel = &Name::cloopcancelDispatcher;
 					this->getBlobAlignment = &Name::cloopgetBlobAlignmentDispatcher;
+					this->getMetadata = &Name::cloopgetMetadataDispatcher;
 				}
 			} vTable;
 
@@ -9075,6 +9085,21 @@ namespace Firebird
 			}
 		}
 
+		static IMessageMetadata* CLOOP_CARG cloopgetMetadataDispatcher(IBatch* self, IStatus* status) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				return static_cast<Name*>(self)->Name::getMetadata(&status2);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+				return static_cast<IMessageMetadata*>(0);
+			}
+		}
+
 		static void CLOOP_CARG cloopaddRefDispatcher(IReferenceCounted* self) throw()
 		{
 			try
@@ -9122,6 +9147,7 @@ namespace Firebird
 		virtual IBatchCompletionState* execute(StatusType* status, ITransaction* transaction) = 0;
 		virtual void cancel(StatusType* status) = 0;
 		virtual unsigned getBlobAlignment(StatusType* status) = 0;
+		virtual IMessageMetadata* getMetadata(StatusType* status) = 0;
 	};
 
 	template <typename Name, typename StatusType, typename Base>

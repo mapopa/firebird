@@ -4891,6 +4891,22 @@ unsigned YBatch::getBlobAlignment(CheckStatusWrapper* status)
 }
 
 
+IMessageMetadata* YBatch::getMetadata(CheckStatusWrapper* status)
+{
+	try
+	{
+		YEntry<YBatch> entry(status, this);
+
+		return entry.next()->getMetadata(status);
+	}
+	catch (const Exception& e)
+	{
+		e.stuffException(status);
+	}
+	return 0;
+}
+
+
 void YBatch::registerBlob(CheckStatusWrapper* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId)
 {
 	try

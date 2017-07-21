@@ -5694,6 +5694,37 @@ unsigned JBatch::getBlobAlignment(CheckStatusWrapper*)
 }
 
 
+IMessageMetadata* JBatch::getMetadata(CheckStatusWrapper* status)
+{
+	IMessageMetadata* meta;
+	try
+	{
+		EngineContextHolder tdbb(status, this, FB_FUNCTION);
+		check_database(tdbb);
+
+		try
+		{
+			DsqlBatch* b = getHandle();
+			meta = b->getMetadata(tdbb);
+		}
+		catch (const Exception& ex)
+		{
+			transliterateException(tdbb, ex, status, "JBatch::getMetadata");
+			return NULL;
+		}
+		trace_warning(tdbb, status, "JBatch::getMetadata");
+	}
+	catch (const Exception& ex)
+	{
+		ex.stuffException(status);
+		return NULL;
+	}
+
+	successful_completion(status);
+	return meta;
+}
+
+
 void JBatch::registerBlob(CheckStatusWrapper* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId)
 {
 	try

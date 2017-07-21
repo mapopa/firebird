@@ -196,6 +196,7 @@ public:
 	Firebird::IBatchCompletionState* execute(Firebird::CheckStatusWrapper* status, Firebird::ITransaction* transaction);
 	void cancel(Firebird::CheckStatusWrapper* status);
 	unsigned getBlobAlignment(Firebird::CheckStatusWrapper* status);
+	Firebird::IMessageMetadata* getMetadata(Firebird::CheckStatusWrapper* status);
 
 public:
 	JBatch(DsqlBatch* handle, JStatement* aStatement);
