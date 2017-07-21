@@ -522,9 +522,7 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 		{
 			if (startRequest)
 			{
-				DEB_BATCH(fprintf(stderr, "\n\n+++ Unwind\n\n"));
 				EXE_unwind(tdbb, req);
-				DEB_BATCH(fprintf(stderr, "\n\n+++ Start\n\n"));
 				EXE_start(tdbb, req, transaction);
 				startRequest = false;
 			}
@@ -797,5 +795,5 @@ void DsqlBatch::DataCache::clear()
 	m_cache->clear();
 	if (m_space && m_used)
 		m_space->releaseSpace(0, m_used);
-	m_used = m_got = 0;
+	m_used = m_got = m_shift = 0;
 }
