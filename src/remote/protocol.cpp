@@ -974,7 +974,7 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			}
 
 			// Process status vectors
-			unsigned pos = 0u;
+			ULONG pos = 0u;
 			LocalStatus to;
 			DEB_BATCH(fprintf(stderr, "BatRem: xdr sv %d\n", b->p_batch_vectors));
 			for (unsigned i = 0; i < b->p_batch_vectors; ++i, ++pos)

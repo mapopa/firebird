@@ -75,7 +75,7 @@ public:
 	void add(thread_db* tdbb, ULONG count, const void* inBuffer);
 	void addBlob(thread_db* tdbb, ULONG length, const void* inBuffer, ISC_QUAD* blobId);
 	void appendBlobData(thread_db* tdbb, ULONG length, const void* inBuffer);
-	void addBlobStream(thread_db* tdbb, uint length, const void* inBuffer);
+	void addBlobStream(thread_db* tdbb, unsigned length, const void* inBuffer);
 	void registerBlob(thread_db* tdbb, const ISC_QUAD* existingBlob, ISC_QUAD* blobId);
 	Firebird::IBatchCompletionState* execute(thread_db* tdbb);
 	Firebird::IMessageMetadata* getMetadata(thread_db* tdbb);

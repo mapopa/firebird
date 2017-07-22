@@ -5659,7 +5659,7 @@ void JBatch::appendBlobData(CheckStatusWrapper* status, unsigned length, const v
 }
 
 
-void JBatch::addBlobStream(CheckStatusWrapper* status, uint length, const void* inBuffer)
+void JBatch::addBlobStream(CheckStatusWrapper* status, unsigned length, const void* inBuffer)
 {
 	try
 	{
