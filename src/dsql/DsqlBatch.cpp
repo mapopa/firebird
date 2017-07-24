@@ -297,7 +297,7 @@ void DsqlBatch::blobCheckMode(bool stream, const char* fname)
 		Arg::Gds(isc_random) << fname);
 }
 
-void DsqlBatch::blobPrepare()
+void DsqlBatch::blobSetSize()
 {
 	// Store size of previous blob if it was changed by appendBlobData()
 	unsigned blobSize = m_blobs.getSize();
@@ -307,6 +307,11 @@ void DsqlBatch::blobPrepare()
 		m_blobs.put3(&blobSize, sizeof(blobSize), m_lastBlob + sizeof(ISC_QUAD));
 		m_setBlobSize = false;
 	}
+}
+
+void DsqlBatch::blobPrepare()
+{
+	blobSetSize();
 
 	// Align blob stream
 	m_blobs.align(BLOB_STREAM_ALIGN);
@@ -416,6 +421,8 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 	{
 		// This code expects the following to work correctly
 		fb_assert(RAM_BATCH % BLOB_STREAM_ALIGN == 0);
+
+		blobSetSize();		// Needed after appendBlobData()
 
 		if (!m_blobs.done())
 		{

@@ -84,6 +84,7 @@ public:
 private:
 	void genBlobId(ISC_QUAD* blobId);
 	void blobPrepare();
+	void blobSetSize();
 	void blobCheckMode(bool stream, const char* fname);
 	void blobCheckMeta();
 	void registerBlob(const ISC_QUAD* engineBlob, const ISC_QUAD* batchBlob);
