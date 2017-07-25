@@ -34,6 +34,9 @@
 
 static IMaster* master = fb_get_master_interface();
 
+
+// output error message to user
+
 static void errPrint(IStatus* status)
 {
 	char buf[256];
@@ -41,17 +44,26 @@ static void errPrint(IStatus* status)
 	fprintf(stderr, "%s\n", buf);
 }
 
+
+// align target to alignment boundary
+
 template <typename T>
 static inline T align(T target, uintptr_t alignment)
 {
 	return (T) ((((uintptr_t) target) + alignment - 1) & ~(alignment - 1));
 }
 
+
+// append given message to buffer ptr
+
 static void putMsg(unsigned char*& ptr, const void* from, unsigned size, unsigned alignment)
 {
 	memcpy(ptr, from, size);
 	ptr += align(size, alignment);
 }
+
+
+// append given blob to buffer ptr
 
 static void putBlob(unsigned char*& ptr, const void* from, unsigned size, unsigned alignment, ISC_QUAD* id)
 {
@@ -64,10 +76,15 @@ static void putBlob(unsigned char*& ptr, const void* from, unsigned size, unsign
 	ptr = align(ptr, alignment);
 }
 
+
+// BatchCompletionState printer - prints all what we know about completed batch
+
 static void print_cs(ThrowStatusWrapper& status, IBatchCompletionState* cs, IUtil* utl)
 {
 	unsigned p = 0;
 	IStatus* s2 = NULL;
+
+	// 1. Print per-message state info
 
 	unsigned upcount = cs->getSize(&status);
 	unsigned unk = 0, succ = 0;
@@ -91,6 +108,8 @@ static void print_cs(ThrowStatusWrapper& status, IBatchCompletionState* cs, IUti
 		}
 	}
 	printf("total=%u success=%u success(but no update info)=%u\n", upcount, succ, unk);
+
+	// 2. Print detailed errors (if exist) for messages 
 
 	s2 = master->getStatus();
 	for(p = 0; (p = cs->findError(&status, p)) != IBatchCompletionState::NO_MORE_ERRORS; ++p)
@@ -246,7 +265,6 @@ int main()
 		pb->clear(&status);
 		pb->insertInt(&status, IBatch::MULTIERROR, 1);
 		pb->insertInt(&status, IBatch::BLOB_IDS, IBatch::BLOB_IDS_ENGINE);
-		//pb->insertInt(&status, IBatch::BLOB_IDS, blobStr ? IBatch::BLOB_IDS_STREAM : userId ? IBatch::BLOB_IDS_USER : IBatch::BLOB_IDS_ENGINE);
 
 		// create batch
 		const char* sqlStmt2 = "insert into project(proj_id, proj_name, proj_desc) values(?, ?, ?)";
@@ -257,6 +275,8 @@ int main()
 		project2->id.set("BAT21");
 		project2->name.set("SNGL_BLOB");
 		batch->addBlob(&status, strlen(sqlStmt2), sqlStmt2, &project2->desc);
+		batch->appendBlobData(&status, 1, "\n");
+		batch->appendBlobData(&status, strlen(sqlStmt1), sqlStmt1);
 		batch->add(&status, 1, project2.getData());
 
 		// execute it
@@ -266,7 +286,7 @@ int main()
 		// fill batch with data
 		project2->id.set("BAT22");
 		project2->name.set("SNGL_REC1");
-		batch->addBlob(&status, strlen(sqlStmt1), sqlStmt1, &project2->desc);
+		batch->addBlob(&status, strlen(sqlStmt2), sqlStmt2, &project2->desc);
 		batch->add(&status, 1, project2.getData());
 
 		project2->id.set("BAT22");		// PK violation
@@ -283,6 +303,61 @@ int main()
 		project2->name.set("SNGL_REC4");
 		batch->addBlob(&status, 2, "r4", &project2->desc);
 		batch->add(&status, 1, project2.getData());
+
+		// execute it
+		cs = batch->execute(&status, tra);
+		print_cs(status, cs, utl);
+
+		// close batch
+		batch->release();
+		batch = NULL;
+
+		//
+		// Part 3. BLOB stream.
+		//
+
+		// use Msg2/project2/sqlStmt2 to store in a table
+
+		pb->clear(&status);
+		pb->insertInt(&status, IBatch::BLOB_IDS, IBatch::BLOB_IDS_STREAM);
+
+		// create batch
+		batch = att->createBatch(&status, tra, 0, sqlStmt2, SAMPLES_DIALECT, meta,
+			pb->getBufferLength(&status), pb->getBuffer(&status));
+
+		unsigned blobAlign = batch->getBlobAlignment(&status);
+
+		// prepare blob IDs
+		ISC_QUAD v1={0,1}, v2={0,2}, v3={0,3};
+
+		// send messages to batch
+		project2->id.set("BAT31");
+		project2->name.set("STRM_BLB_A");
+		project2->desc = v1;
+		batch->add(&status, 1, project2.getData());
+
+		project2->id.set("BAT32");
+		project2->name.set("STRM_BLB_B");
+		project2->desc = v2;
+		batch->add(&status, 1, project2.getData());
+
+		project2->id.set("BAT33");
+		project2->name.set("STRM_BLB_C");
+		project2->desc = v3;
+		batch->add(&status, 1, project2.getData());
+
+		// prepare blobs in the stream buffer
+
+		const char* d1 = "1111111111111111111";
+		const char* d2 = "222222222222222222222222222";
+		const char* d3 = "33333333333333333333333333333333333333333333333333333";
+
+		stream = streamStart;
+		putBlob(stream, d1, strlen(d1), blobAlign, &v1);
+		putBlob(stream, d2, strlen(d2), blobAlign, &v2);
+		putBlob(stream, d3, strlen(d3), blobAlign, &v3);
+
+		batch->addBlobStream(&status, stream - streamStart, streamStart);
 
 		// execute it
 		cs = batch->execute(&status, tra);
