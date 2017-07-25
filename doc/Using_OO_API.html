@@ -3,10 +3,12 @@
 <head>
 	<meta http-equiv="content-type" content="text/html; charset=utf-8"/>
 	<title></title>
-	<meta name="generator" content="LibreOffice 5.2.3.3 (Linux)"/>
+	<meta name="generator" content="LibreOffice 5.1.6.2 (Linux)"/>
 	<meta name="author" content="alex "/>
 	<meta name="created" content="00:00:00"/>
-	<meta name="changed" content="2017-02-02T17:00:07.121995034"/>
+	<meta name="changed" content="2017-07-25T18:42:35.213788223"/>
+	<meta name="created" content="00:00:00">
+	<meta name="changed" content="2017-02-02T17:00:07.121995034">
 	<meta name="created" content="2013-05-31T00:00:00.010003100">
 	<meta name="changed" content="2017-01-31T17:08:57.272616325">
 	<meta name="CHANGEDBY" content="Alex Peshkoff">
@@ -14,7 +16,7 @@
 	<meta name="CHANGEDBY" content="Alex Peshkoff">
 	<meta name="CHANGEDBY" content="Alex Peshkoff">
 	<style type="text/css">
-		@page { size: 8.5in 11in; margin: 0.79in }
+		@page { margin: 0.79in }
 		p { margin-bottom: 0.08in; color: #000000 }
 		h1 { color: #000000 }
 	</style>
@@ -827,8 +829,31 @@ completion code that function is notified (by passing false as last
 parameter) that segment was not read completely and continuation is
 expected at next call.</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">After
-finishing with blob do not forget top close it:</font></p>
+finishing with blob do not forget to close it:</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><i>blob-&gt;close(&amp;status);</i></font></p>
+<p style="margin-bottom: 0in"><br/>
+
+</p>
+<h1><font size="4" style="font-size: 14pt">Modifying data in a batch.</font></h1>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">Since
+version 4 firebird supports batch execution of statements with input
+parameters – that means sending more than single set of parameters
+when executing statement. <a href="#Batch">Batch</a> interface is
+designed (first of all) in order to satisfy JDBC requirements for
+prepared statement’s batch processing but has some serious
+differences:</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">-
+like all operations with data in firebird it’s oriented on
+messages, not single field;</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">-
+as an important extension out batch interface supports inline use of
+blobs (efficient when working with small blobs);</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">-
+</font><font size="4" style="font-size: 14pt">execute() method
+returns not plain array of integers but special <a href="#BatchCompletionState">BatchCompletionState</a>
+interface which can (depending upon batch creation parameters)
+contain both update records info and in addition to error flag
+detailed status vectors for messages that caused execution errors.</font></p>
 <p style="margin-bottom: 0in"><br/>
 
 </p>
@@ -838,7 +863,7 @@ interface was not completed in FB3, we expect to have something more
 interesting in next version. The minimum existing support is as
 follows: <a href="#Attachment">IAttachment</a> contains call
 queEvents() which performs almost same functions as isc_que_events()
-call. Instead the pair of parameters </font><font size="4" style="font-size: 14pt"><i>FPTR_EVENT_CALLBACK
+call. Instead the pair of parameters </font><font size="4" style="font-size: 14pt"><i>FP</i></font><font size="4" style="font-size: 14pt"><i>TR_EVENT_CALLBACK
 ast</i></font> <font size="4" style="font-size: 14pt">and </font><font size="4" style="font-size: 14pt"><i>void*
 arg</i></font><font size="4" style="font-size: 14pt">, required to
 invoke user code when event happens in firebird engine, callback
@@ -1489,13 +1514,162 @@ interface – replaces isc_db_handle:</font></p>
 <p style="margin-bottom: 0in"><br/>
 
 </p>
+<p style="margin-bottom: 0in"><a name="Batch"></a><font size="4" style="font-size: 14pt">Batch
+interface – makes it possible to process multiple sets of
+parameters in single statement execution.</font></p>
+<ol>
+	<li/>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
+	add(StatusType* status, uint count, const void* inBuffer) – adds
+	count messages from inBuffer to the batch. Total size of messages
+	that can be added to the batch is limited by BUFFER_BYTES_SIZE
+	<a href="#Batch_PB">parameter</a> of batch creation.</font></p>
+	<li/>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
+	addBlob(StatusType* status, uint length, const void* inBuffer,
+	ISC_QUAD* blobId) – adds single blob having length bytes from
+	inBuffer to the batch, blob identifier is located at blobId address.
+	Total size of inline blobs that can be added to the batch is limited
+	by BUFFER_BYTES_SIZE <a href="#Batch_PB">parameter</a> of batch
+	creation (affects all blob-oriented methods except registerBlob()).</font></p>
+	<li/>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
+	appendBlobData(StatusType* status, uint length, const void*
+	inBuffer) – extend last added blob: append length bytes taken from
+	 inBuffer address to it.</font></p>
+	<li/>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
+	addBlobStream(StatusType* status, uint length, const void* inBuffer)
+	– adds blob data (this can be multiple objects or part of single
+	blob) to the batch. Header of each blob in the stream is aligned at
+	getBlobAlignment() boundary and contains 2 fields: first - 8-bytes
+	blob identifier (in ISC_QUAD format), second - 4-bytes length of
+	blob. Blob header should not cross boundaries of buffer in this
+	function call. After header blob data (length bytes long) goes. Blob
+	data (unlike header) may be distributed between multiple 
+	addBlobStream() calls.</font></p>
+	<li/>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
+	registerBlob(StatusType* status, const ISC_QUAD* existingBlob,
+	ISC_QUAD* blobId) – makes it possible to use in batch blobs added
+	using standard <a href="#Blob">Blob</a> interface. This function
+	contains 2 ISC_QUAD* parameters, it’s important not to mix them –
+	second parameter (existingBlob) is a pointer to blob identifier,
+	already added out of batch scope, third (blobId) points to blob
+	identifier that will be placed in a message in this batch.</font></p>
+	<li/>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><a href="#BatchCompletionState">IBatchCompletionState</a>*
+	execute(StatusType* status, ITransaction* transaction) – execute
+	batch with parameters passed to it in the messages. If parameter
+	MULTIERROR is not set in <a href="#Batch_PB">parameters block</a>
+	when creating the batch execution will be stopped after first error,
+	in MULTIERROR mode an unlimited number of errors can happen, after
+	an error execution is continued from the next message. This function
+	returns BatchCompletionState interface that contains all requested
+	nformation about the results of batch execution.</font></p>
+	<li/>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
+	cancel(StatusType* status) – clear messages and blobs buffers,
+	return batch to a state it had right after creation. Notice –
+	being reference counted interface batch does not contain any special
+	function to close it, please use release() for this purposes. </font>
+	</p>
+	<li/>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">uint
+	getBlobAlignment(StatusType* status) – returns required alignment
+	for the data placed into the buffer of addBlobStream().</font></p>
+	<li/>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">MessageMetadata
+	getMetadata(StatusType* status) – return format of metadata used
+	in batch’s messages.</font></p>
+</ol>
+<p style="margin-bottom: 0in"><a name="Batch_PB"></a>  <font size="4" style="font-size: 14pt">Tag
+for parameters block:</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">VERSION1</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">CURRENT_VERSION
+= VERSION1</font></p>
+<p style="margin-bottom: 0in">  <font size="4" style="font-size: 14pt">Tags
+for clumplets in </font><font size="4" style="font-size: 14pt">parameters
+block:</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">MULTIERROR
+- can have &gt;1 message with errors</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">RECORD_COUNTS
+- per-message modified records accounting</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">BUFFER_BYTES_SIZE
+- maximum possible buffer size (default 128Kb, maximum 10Mb)</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">BLOB_IDS
+- policy used to store blobs</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">DETAILED_ERRORS
+- how many vectors with detailed error info are stored in completion
+state (default 64, maximum 256)</font></p>
+<p style="margin-bottom: 0in"><a name="Batch_Blob_Policy"></a> 
+<font size="4" style="font-size: 14pt">Policies used to store blobs:</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">BLOB_IDS_NONE
+– inline blobs can't be used (registerBlob() works anyway)</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">BLOB_IDS_ENGINE
+- blobs are added one by one, IDs are generated by firebird engine</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">BLOB_IDS_USER
+- blobs are added one by one, IDs are generated by user</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">BLOB_IDS_STREAM
+- blobs are added in a stream, IDs are generated by user</font></p>
+<p style="margin-bottom: 0in"><br/>
+
+</p>
+<p style="margin-bottom: 0in"><a name="BatchCompletionState"></a><font size="4" style="font-size: 14pt">BatchCompletionState
+– disposable interface, always returned by execute() method of
+<a href="#Batch">Batch</a> interface. It contains more or less
+(depending upon parameters passed when <a href="#Batch">Batch</a> was
+created) detailed information about the results of batch execution.</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">{</font></p>
+<ol>
+	<li/>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">uint
+	getSize(StatusType* status) – returns the total number of
+	processed messages.</font></p>
+	<li/>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">int
+	getState(StatusType* status, uint pos) – returns the result of
+	execution of message number ‘pos’. On any error with the message
+	this is EXECUTE_FAILED constant, value returned on success depends
+	upon presence of RECORD_COUNTS <a href="#Batch_PB">parameter</a> of
+	batch creation. When it present and has non-zero value number of
+	records inserted, updated or deleted during particular message
+	processing is returned, else SUCCESS_NO_INFO constant is returned.</font></p>
+	<li/>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">uint
+	findError(StatusType* status, uint pos) – finds next (starting
+	with pos) message which processing caused an error. When such
+	message is missing NO_MORE_ERRORS constant is returned. Number of
+	status vectors, returned in this interface, is limited by the value
+	of DETAILED_ERRORS <a href="#Batch_PB">parameter</a> of batch
+	creation.</font></p>
+	<li/>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
+	getStatus(StatusType* status, IStatus* to, uint pos) – returns
+	detailed information (full status vector) about an error that took
+	place when processing ‘pos’ message. In order to distinguish
+	between errors (in <a href="#Batch">Batch</a>::execute() or in
+	<a href="#BatchCompletionState">BatchCompletionState</a>::getStatus())
+	that status is returned in separate ‘to’ parameter unlike errors
+	in this call that are placed into ‘status’ parameter.</font></p>
+</ol>
+<p style="margin-bottom: 0in">  <font size="4" style="font-size: 14pt">Special
+values returned by getState():</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">EXECUTE_FAILED
+- error happened when processing this message</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">SUCCESS_NO_INFO
+- record update info was not collected</font></p>
+<p style="margin-bottom: 0in">  <font size="4" style="font-size: 14pt">Special
+value returned by findError():</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">NO_MORE_ERRORS
+– no more messages with errors in this batch</font></p>
 <p style="margin-bottom: 0in"><br/>
 
 </p>
 <p style="margin-bottom: 0in"><a name="Blob"></a><font size="4" style="font-size: 14pt">Blob
 interface – replaces isc_blob_handle:</font></p>
 <ol>
-	<li/>
+	<li value="1"/>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
 	getInfo(StatusType* status, unsigned itemsLength, const unsigned
 	char* items, unsigned bufferLength, unsigned char* buffer) –
