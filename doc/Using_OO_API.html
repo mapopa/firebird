@@ -6,7 +6,9 @@
 	<meta name="generator" content="LibreOffice 5.1.6.2 (Linux)"/>
 	<meta name="author" content="alex "/>
 	<meta name="created" content="00:00:00"/>
-	<meta name="changed" content="2017-07-25T18:42:35.213788223"/>
+	<meta name="changed" content="2017-07-27T13:17:58.205479048"/>
+	<meta name="created" content="00:00:00">
+	<meta name="changed" content="2017-07-26T10:39:38.045248271">
 	<meta name="created" content="00:00:00">
 	<meta name="changed" content="2017-02-02T17:00:07.121995034">
 	<meta name="created" content="2013-05-31T00:00:00.010003100">
@@ -849,12 +851,264 @@ messages, not single field;</font></p>
 as an important extension out batch interface supports inline use of
 blobs (efficient when working with small blobs);</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">-
-</font><font size="4" style="font-size: 14pt">execute() method
-returns not plain array of integers but special <a href="#BatchCompletionState">BatchCompletionState</a>
-interface which can (depending upon batch creation parameters)
-contain both update records info and in addition to error flag
-detailed status vectors for messages that caused execution errors.</font></p>
+execute() method returns not plain array of integers but special
+<a href="#BatchCompletionState">BatchCompletionState</a> interface
+which can (depending upon batch creation parameters) contain both
+update records info and in addition to error flag detailed status
+vectors for messages that caused execution errors.</font></p>
 <p style="margin-bottom: 0in"><br/>
+
+</p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><a href="#Batch">Batch</a>
+(exactly like <a href="#ResultSet">ResultSet</a>) may be created in 2
+ways – using <a href="#Statement">Statement</a> or <a href="#Attachment">Attachment</a>
+interface, </font><font size="4" style="font-size: 14pt">in both
+cases createBatch() method of appropriate interface is called. In
+second case text of SQL statement to be executed in a batch is passed
+directly to createBatch(). </font><font size="4" style="font-size: 14pt">T</font><font size="4" style="font-size: 14pt">uning
+of batch operation is performed using <a href="#Batch_PB">Batch
+parameters block</a> which has format more or less similar to DPB v.2
+– tag in the beginning (IBatch::</font><font size="4" style="font-size: 14pt">CURRENT_VERSION</font><font size="4" style="font-size: 14pt">)
+followed by the set of wide clumplets: 1-byte tag, 4-byte </font><font size="4" style="font-size: 14pt">length,
+length-byte value. Possible tags are <a href="#Batch_PB">described</a>
+in batch interface. The simplest (and recommended) way to create
+parameters block for batch creation is to use appropriate <a href="#XpbBuilder">XpbBuilder</a>
+interface:</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><i>IXpbBuilder*
+pb = utl-&gt;getXpbBuilder(&amp;status, IXpbBuilder::BATCH, NULL, 0);</i></font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><i>pb-&gt;insertInt(&amp;status,
+IBatch::RECORD_COUNTS, 1);</i></font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">Use
+of such parameters block directs batch to account number of updated
+records on per-message basis.</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">To
+create batch interface with desired parameters pass parameters block
+to createBatch() call:</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><i>IBatch*
+batch = att-&gt;createBatch(&amp;status, tra, 0, sqlStmtText,
+SQL_DIALECT_V6, NULL,</i></font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><i>pb-&gt;getBufferLength(&amp;status),
+pb-&gt;getBuffer(&amp;status));</i></font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">In
+this sample batch interface is created with default format of
+messages cause NULL is passed instead input metadata format.</font></p>
+<p style="margin-bottom: 0in"><br/>
+
+</p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">In
+order to proceed with created batch interface we need to know format
+of messages in it. It can be obtained using getMetadata() method:</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><i>IMessageMetadata*
+meta = batch-&gt;getMetadata(&amp;status);</i></font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">Certainly
+if you have passed your own format of messages to the batch you may
+simply use it.</font></p>
+<p style="margin-bottom: 0in; font-style: normal"><font size="4" style="font-size: 14pt">In
+the former text I suppose that some function fillNextMessage(unsigned
+char* data, IMessageMetadata* metadata) is present and can fill
+buffer ‘data’  according to passed format ‘metadata’. In
+order to work with messages we need a buffer for a data:</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><i>unsigned
+char* data = new unsigned char[meta-&gt;getMessageLength(&amp;status)];</i></font></p>
+<p style="margin-bottom: 0in; font-style: normal"><font size="4" style="font-size: 14pt">Now
+we can add some messages full of data to the batch:</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><i>fillNextMessage(data,
+meta);</i></font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><i>batch-&gt;add(&amp;status,
+1, data);</i></font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><i>fillNextMessage(data,
+meta);</i></font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><i>batch-&gt;add(&amp;status,
+1, data);</i></font></p>
+<p style="margin-bottom: 0in; font-style: normal"><font size="4" style="font-size: 14pt">An
+alternative way of working with messages (using FB_MESSAGE macro) is
+present in the sample of using batch interface 11.batch.cpp.</font></p>
+<p style="margin-bottom: 0in; font-style: normal"><br/>
+
+</p>
+<p style="margin-bottom: 0in; font-style: normal"><font size="4" style="font-size: 14pt">Finally
+batch should be executed:</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><i><a href="#BatchCompletionState">IBatchCompletionState</a>*
+cs = batch-&gt;execute(&amp;status, tra);</i></font></p>
+<p style="margin-bottom: 0in; font-style: normal"><font size="4" style="font-size: 14pt">We
+requested accounting of the number of modified (inserted, updated or
+deleted) records per message. To print it we must use
+<a href="#BatchCompletionState">BatchCompletionState</a><i>
+</i>interface. Determine total number of messages processed by batch
+(it can be less than the number of messages passed to the batch if
+error happened and an option enabling multiple errors during batch
+processing was not turned on):</font></p>
+<p><font size="4" style="font-size: 14pt"><i><font color="#000000"><span style="background: #ffffff">unsigned
+</span></font><font color="#000000"><span style="background: #ffffff">total
+</span></font><font color="#000000"><span style="background: #ffffff">=
+cs-</span></font><font color="#000000"><span style="background: #ffffff">&gt;</span></font><font color="#000000"><span style="background: #ffffff">getSize(&amp;status);</span></font></i></font></p>
+<p><font size="4" style="font-size: 14pt">Now print the state of each
+message:</font></p>
+<p><font color="#000000"><font size="4" style="font-size: 14pt"><i><span style="background: #ffffff">for
+(</span></i></font></font><font color="#000000"><font size="4" style="font-size: 14pt"><i><span style="background: #ffffff">unsigned
+</span></i></font></font><font color="#000000"><font size="4" style="font-size: 14pt"><i><span style="background: #ffffff">p
+= 0; p &lt; total; ++p) printf(“Msg %u state %d\n”, p,
+cs-&gt;getState(</span></i></font></font><font color="#000000"><font size="4" style="font-size: 14pt"><i><span style="background: #ffffff">&amp;status,
+p)</span></i></font></font><font color="#000000"><font size="4" style="font-size: 14pt"><i><span style="background: #ffffff">)</span></i></font></font><font color="#000000"><font size="4" style="font-size: 14pt"><i><span style="background: #ffffff">;</span></i></font></font></p>
+<p style="font-style: normal"><font color="#000000"><font size="4" style="font-size: 14pt"><span style="background: #ffffff">When
+finished analyzing completion state don’t forget to dispose it:</span></font></font></p>
+<p><font color="#000000"><font size="4" style="font-size: 14pt"><i><span style="background: #ffffff">cs-&gt;dispose();</span></i></font></font></p>
+<p><font color="#000000"><font size="4" style="font-size: 14pt"><span style="background: #ffffff">Full
+sample of printing contents</span></font></font><font color="#000000"><span style="background: #ffffff">
+of </span></font><font color="#000000"><font size="4" style="font-size: 14pt"><span style="font-style: normal"><span style="background: #ffffff"><a href="#BatchCompletionState">BatchCompletionState</a>
+</span></span></font></font><font color="#000000"><font size="4" style="font-size: 14pt"><span style="font-style: normal"><span style="background: #ffffff">is
+in print_cs() function in sample </span></span></font></font><font color="#000000"><font size="4" style="font-size: 14pt"><span style="font-style: normal"><span style="background: #ffffff">11.batch.cpp.</span></span></font></font></p>
+<p><br/>
+<br/>
+
+</p>
+<p><font color="#000000"><font size="4" style="font-size: 14pt"><span style="font-style: normal"><span style="background: #ffffff">I</span></span></font></font><font color="#000000"><font size="4" style="font-size: 14pt"><span style="font-style: normal"><span style="background: #ffffff">f
+for some reason you want to make batch buffers empty not executing it
+(i.e. prepare for new portion of messages to process) use cancel()
+method:</span></span></font></font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><i><font color="#000000"><span style="background: #ffffff">batch-&gt;</span></font><font color="#000000"><span style="background: #ffffff">cancel(&amp;status);</span></font></i></font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><font color="#000000"><span style="font-style: normal"><span style="background: #ffffff">Being
+reference counted Batch does not have special method to close it –
+standard release() call:</span></span></font></font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><i><font color="#000000"><span style="background: #ffffff">batch-</span></font><font color="#000000"><span style="background: #ffffff">&gt;</span></font><font color="#000000"><span style="background: #ffffff">release()</span></font><font color="#000000"><span style="background: #ffffff">;</span></font></i></font></p>
+<p style="margin-bottom: 0in"><br/>
+
+</p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><font color="#000000"><span style="font-style: normal"><span style="background: #ffffff">Described
+methods help to implement all what one needs for JDBC-style prepared
+statement batch operations. </span></span></font></font>
+</p>
+<p style="margin-bottom: 0in"><br/>
+
+</p>
+<h1><font size="4" style="font-size: 14pt">More complex use of Batch
+interface.</font></h1>
+<p><font size="4" style="font-size: 14pt">One can add more than
+single message in one call to the batch. When doing it please
+remember – messages should be appropriately aligned for this
+feature to work correctly. Required alignment and aligned size of the
+message should be obtained from <a href="#MessageMetadata">MessageMetadata</a>
+interface, for example:</font></p>
+<p><font size="4" style="font-size: 14pt"><i>unsigned aligned =
+meta-&gt;getAlignedLength(&amp;status);</i></font></p>
+<p><font size="4" style="font-size: 14pt">Later that size will be
+useful when allocating an array of messages and working with it:</font></p>
+<p><font size="4" style="font-size: 14pt"><i>unsigned char* data =
+new unsigned char[aligned * N];	// N is desired number of messages</i></font></p>
+<p><font size="4" style="font-size: 14pt"><i>for (int n = 0; n &lt;
+N; ++n) fillNextMessage(&amp;data[aligned * n], meta);</i></font></p>
+<p><font size="4" style="font-size: 14pt"><i>batch-&gt;add(&amp;status,
+N, data);</i></font></p>
+<p style="font-style: normal"><font size="4" style="font-size: 14pt">After
+it batch may be executed or next portion of messages added to it.</font></p>
+<p style="font-style: normal"><br/>
+<br/>
+
+</p>
+<p style="font-style: normal"><font size="4" style="font-size: 14pt">Blobs
+in general are not compatible with batches – batch is efficient
+when one needs to pass a lot of small data to the server in single
+step, blobs are treated as large objects and therefore in general it
+makes no sense to use them in batches. But on practice it often
+happens that blobs are not too big – and in this case use of
+traditional blob API (create blob, pass segments to the server, close
+blob, pass blobs ID in the message) kills performance, specially when
+used over WAN. Therefore in firebird batch supports passing blobs to
+server inline, together with other messages. To use that feature
+first of all <a href="#Batch_Blob_Policy">blob usage policy</a> for a
+batch to be created should be set (as an option in <a href="#Batch_PB">parameters
+block</a>):</font></p>
+<p><font size="4" style="font-size: 14pt"><i>pb-&gt;insertInt(&amp;status,
+IBatch::BLOB_IDS, IBatch::BLOB_IDS_ENGINE);</i></font></p>
+<p style="font-style: normal"><font size="4" style="font-size: 14pt">In
+this example temporal blob IDs needed to keep a link between blob and
+a message whr it’s used will be generated by firebird engine –
+that’s the simplest and rather common usage. Imagine that the
+message is described as follows:</font></p>
+<p style="font-style: normal">        <font size="4" style="font-size: 14pt"><i>FB_MESSAGE(Msg,
+ThrowStatusWrapper,</i></font></p>
+<p>            <font size="4" style="font-size: 14pt"><i>(FB_VARCHAR(5),
+id)</i></font></p>
+<p>            <font size="4" style="font-size: 14pt"><i>(FB_VARCHAR(10),
+name)</i></font></p>
+<p>            <font size="4" style="font-size: 14pt"><i>(FB_BLOB,
+desc)</i></font></p>
+<p>        <font size="4" style="font-size: 14pt"><i>)
+project(&amp;status, master);</i></font></p>
+<p style="font-style: normal"><font size="4" style="font-size: 14pt">In
+that case to send a message containing blob to the server one can do
+something like this:</font></p>
+<p>        <font size="4" style="font-size: 14pt"><i>project-&gt;id =
+++idCounter;</i></font></p>
+<p>        <font size="4" style="font-size: 14pt"><i>project-&gt;name.set(currentName);</i></font></p>
+<p>        <font size="4" style="font-size: 14pt"><i>batch-&gt;addBlob(&amp;status,
+descriptionSize, descriptionText, &amp;project-&gt;desc);</i></font></p>
+<p>        <font size="4" style="font-size: 14pt"><i>batch-&gt;add(&amp;status,
+1, project.getData());</i></font></p>
+<p style="margin-bottom: 0in; font-style: normal"><font size="4" style="font-size: 14pt">If
+some blob happened to be big enough not to fit into your existing
+buffer you may instead reallocating buffer use appendBlobData()
+method. It appends more data to last added blob. </font>
+</p>
+<p style="font-style: normal">        <font size="4" style="font-size: 14pt"><i>batch-&gt;addBlob(&amp;status,
+descriptionSize, descriptionText, &amp;project-</i><i>&gt;</i><i>desc);</i></font></p>
+<p style="font-style: normal"><font size="4" style="font-size: 14pt">After
+adding first part of blob get next portion of data into
+descriptionText, update descriptionSize and:</font></p>
+<p style="font-style: normal">        <font size="4" style="font-size: 14pt"><i>batch-&gt;appendBlobData(&amp;status,
+descriptionSize, descriptionText);</i></font></p>
+<p><font size="4" style="font-size: 14pt"><span style="font-style: normal">This
+may be done in a loop but take care not to overflow </span></font><font size="4" style="font-size: 14pt"><span style="font-style: normal">internal
+batch buffers – it’s size is controlled by <a href="#Batch_PB">BUFFER_BYTES_SIZE</a>
+option when creating batch interface but can’t exceed 40Mb (default
+is 10Mb). If you need to process such big blob (for example on the
+background of a lot of small one – this can explain use of batch)
+just use standard blob API and <a href="#Batch::registerBlob">registerBlob</a>
+method of <a href="#Batch">Batch</a> interface.</span></font></p>
+<p><font size="4" style="font-size: 14pt"><span style="font-style: normal">O</span></font><font size="4" style="font-size: 14pt"><span style="font-style: normal">ne
+more possible choice of blob policy is </span></font><font size="4" style="font-size: 14pt"><span style="font-style: normal">BLOB_IDS_</span></font><font size="4" style="font-size: 14pt"><span style="font-style: normal">USER.
+Usage at the first look does not change much – before calling
+addBlob() correct and unique per batch execution ID should be placed
+to </span></font><font size="4" style="font-size: 14pt"><span style="font-style: normal">the
+memory referenced by last parameter. Certainly same ID should be
+passed in the data message to the blob. Taking into an account that
+generation of blob IDs by engine is very fast such policy may seem
+useless but imagine a case when you get blobs and other data in
+relatively independent streams (blocks in a file for example) and
+some good IDs are already present in them. In such case use of
+user-supplied blob IDs can greatly simplify your code.</span></font></p>
+<p><font size="4" style="font-size: 14pt"><span style="font-style: normal">Next
+step when working with existing blob streams is use of
+addBlobStream() method. Using it one can add more than one blob to
+the batch </span></font><font size="4" style="font-size: 14pt"><span style="font-style: normal">per
+single call. Format of blob stream for FB4 Alpha1 is described in
+<a href="#Batch">Batch</a> interface but sooner of all it’s subject
+to be changed in beta release. The reason is that currently only
+stream (not segmented) blobs are supported (and they are and will be
+the default when using batch to add blobs to server). Segmented blobs
+provide absolutely nothing interesting compared with stream one but
+should be supported for backward compatibility reasons, that support
+will be added not later than in beta1 release of FB4.</span></font></p>
+<p><a name="Batch::registerBlob"></a><font size="4" style="font-size: 14pt"><span style="font-style: normal">Last
+method used to work with </span></font><font size="4" style="font-size: 14pt"><span style="font-style: normal">blobs
+</span></font><font size="4" style="font-size: 14pt"><span style="font-style: normal">stands
+alone from the first three </span></font><font size="4" style="font-size: 14pt"><span style="font-style: normal">that
+pass blob data inline with the rest of batch data </span></font><font size="4" style="font-size: 14pt"><span style="font-style: normal">–
+it’s needed to register in a batch ID of a blob created using
+standard blob API. This may be unavoidable if one needs to pass to a
+batch really big blob. </span></font><font size="4" style="font-size: 14pt"><span style="font-style: normal">Do
+not use ID of such blob in batch directly – that will cause invalid
+blob ID error during batch execution. Instead do:</span></font></p>
+<p><font size="4" style="font-size: 14pt"><i>batch-&gt;registerBlob(&amp;status,
+&amp;realId, &amp;msg-&gt;desc);</i></font></p>
+<p style="margin-bottom: 0in; font-style: normal"><font size="4" style="font-size: 14pt">If
+blob policy makes firebird engine generate blob IDs this code is
+enough to correctly register existing blob in a batch. In other cases
+you will have to assign correct (from batch POV) ID to msg-&gt;desc.</font></p>
+<p style="margin-bottom: 0in; font-style: normal"><font size="4" style="font-size: 14pt">All
+mentioned methods are used in 11.batch.cpp – please use it to see
+an alive sample of batching in firebird.</font></p>
+<p style="margin-bottom: 0in; font-style: normal"><br/>
 
 </p>
 <h1><font size="4" style="font-size: 14pt">Working with events.</font></h1>
@@ -863,7 +1117,7 @@ interface was not completed in FB3, we expect to have something more
 interesting in next version. The minimum existing support is as
 follows: <a href="#Attachment">IAttachment</a> contains call
 queEvents() which performs almost same functions as isc_que_events()
-call. Instead the pair of parameters </font><font size="4" style="font-size: 14pt"><i>FP</i></font><font size="4" style="font-size: 14pt"><i>TR_EVENT_CALLBACK
+call. Instead the pair of parameters </font><font size="4" style="font-size: 14pt"><i>FPTR_EVENT_CALLBACK
 ast</i></font> <font size="4" style="font-size: 14pt">and </font><font size="4" style="font-size: 14pt"><i>void*
 arg</i></font><font size="4" style="font-size: 14pt">, required to
 invoke user code when event happens in firebird engine, callback
@@ -1489,6 +1743,26 @@ interface – replaces isc_db_handle:</font></p>
 	cursorFlags is needed to open bidirectional cursor setting it's
 	value to Istatement::CURSOR_TYPE_SCROLLABLE.</font></p>
 	<li/>
+<p><font size="4" style="font-size: 14pt">I</font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">Batch*
+	createBatch(StatusType* status, </font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">ITransaction*
+	transaction, unsigned stmtLength, const char* sqlStmt, unsigned
+	</font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">dialect,
+	</font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">I</font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">MessageMetadata*
+	inMetadata, </font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">unsigned</font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">
+	parLength, const </font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">unsigned
+	</font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">char*
+	par) – </font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">prepares
+	</font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">sqlStmt
+	and creates <a href="#Batch">Batch</a> interface ready to accept
+	multiple sets of input parameters in inMetadata format. L</font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">eaving
+	</font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">inMetadata</font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">
+	NULL makes batch use </font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">default
+	</font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">format
+	</font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">for
+	sqlStmt</font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">.
+	Parameters block may be passed to createBatch() making it possible
+	to adjust batch behavior.</font></font></p>
+	<li/>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">IEvents*
 	queEvents(StatusType* status, IEventCallback* callback, unsigned
 	length, const unsigned char* events) – replaces isc_que_events()
@@ -1520,33 +1794,35 @@ parameters in single statement execution.</font></p>
 <ol>
 	<li/>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
-	add(StatusType* status, uint count, const void* inBuffer) – adds
-	count messages from inBuffer to the batch. Total size of messages
-	that can be added to the batch is limited by BUFFER_BYTES_SIZE
-	<a href="#Batch_PB">parameter</a> of batch creation.</font></p>
+	add(StatusType* status, un</font><font size="4" style="font-size: 14pt">signed</font><font size="4" style="font-size: 14pt">
+	count, const void* inBuffer) – adds count messages from inBuffer
+	to the batch. Total size of messages that can be added to the batch
+	is limited by BUFFER_BYTES_SIZE <a href="#Batch_PB">parameter</a> of
+	batch creation.</font></p>
 	<li/>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
-	addBlob(StatusType* status, uint length, const void* inBuffer,
-	ISC_QUAD* blobId) – adds single blob having length bytes from
-	inBuffer to the batch, blob identifier is located at blobId address.
-	Total size of inline blobs that can be added to the batch is limited
-	by BUFFER_BYTES_SIZE <a href="#Batch_PB">parameter</a> of batch
-	creation (affects all blob-oriented methods except registerBlob()).</font></p>
+	addBlob(StatusType* status, un</font><font size="4" style="font-size: 14pt">signed</font><font size="4" style="font-size: 14pt">
+	length, const void* inBuffer, ISC_QUAD* blobId) – adds single blob
+	having length bytes from inBuffer to the batch, blob identifier is
+	located at blobId address. Total size of inline blobs that can be
+	added to the batch is limited by BUFFER_BYTES_SIZE <a href="#Batch_PB">parameter</a>
+	of batch creation (affects all blob-oriented methods except
+	registerBlob()).</font></p>
 	<li/>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
-	appendBlobData(StatusType* status, uint length, const void*
+	appendBlobData(StatusType* status, unsigned length, const void*
 	inBuffer) – extend last added blob: append length bytes taken from
-	 inBuffer address to it.</font></p>
+	inBuffer address to it.</font></p>
 	<li/>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
-	addBlobStream(StatusType* status, uint length, const void* inBuffer)
-	– adds blob data (this can be multiple objects or part of single
-	blob) to the batch. Header of each blob in the stream is aligned at
-	getBlobAlignment() boundary and contains 2 fields: first - 8-bytes
-	blob identifier (in ISC_QUAD format), second - 4-bytes length of
-	blob. Blob header should not cross boundaries of buffer in this
-	function call. After header blob data (length bytes long) goes. Blob
-	data (unlike header) may be distributed between multiple 
+	addBlobStream(StatusType* status, unsigned length, const void*
+	inBuffer) – adds blob data (this can be multiple objects or part
+	of single blob) to the batch. Header of each blob in the stream is
+	aligned at getBlobAlignment() boundary and contains 2 fields: first
+	- 8-bytes blob identifier (in ISC_QUAD format), second - 4-bytes
+	length of blob. Blob header should not cross boundaries of buffer in
+	this function call. After header blob data (length bytes long) goes.
+	Blob data (unlike header) may be distributed between multiple
 	addBlobStream() calls.</font></p>
 	<li/>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
@@ -1575,35 +1851,34 @@ parameters in single statement execution.</font></p>
 	function to close it, please use release() for this purposes. </font>
 	</p>
 	<li/>
-<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">uint
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">unsigned
 	getBlobAlignment(StatusType* status) – returns required alignment
 	for the data placed into the buffer of addBlobStream().</font></p>
 	<li/>
-<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">MessageMetadata
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">IMessageMetadata*
 	getMetadata(StatusType* status) – return format of metadata used
 	in batch’s messages.</font></p>
 </ol>
-<p style="margin-bottom: 0in"><a name="Batch_PB"></a>  <font size="4" style="font-size: 14pt">Tag
+<p style="margin-bottom: 0in"><a name="Batch_PB"></a><font size="4" style="font-size: 14pt">Tag
 for parameters block:</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">VERSION1</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">CURRENT_VERSION
 = VERSION1</font></p>
-<p style="margin-bottom: 0in">  <font size="4" style="font-size: 14pt">Tags
-for clumplets in </font><font size="4" style="font-size: 14pt">parameters
-block:</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">Tags
+for clumplets in parameters block:</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">MULTIERROR
-- can have &gt;1 message with errors</font></p>
+(0/1) – can have &gt;1 message with errors</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">RECORD_COUNTS
-- per-message modified records accounting</font></p>
+(0/1) - per-message modified records accounting</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">BUFFER_BYTES_SIZE
-- maximum possible buffer size (default 128Kb, maximum 10Mb)</font></p>
+(integer) - maximum possible buffer size (default 10Mb, maximum 40Mb)</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">BLOB_IDS
-- policy used to store blobs</font></p>
+- <a href="#Batch_Blob_Policy">policy</a> used to store blobs</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">DETAILED_ERRORS
-- how many vectors with detailed error info are stored in completion
-state (default 64, maximum 256)</font></p>
-<p style="margin-bottom: 0in"><a name="Batch_Blob_Policy"></a> 
-<font size="4" style="font-size: 14pt">Policies used to store blobs:</font></p>
+(integer) - how many vectors with detailed error info are stored in
+completion state (default 64, maximum 256)</font></p>
+<p style="margin-bottom: 0in"><a name="Batch_Blob_Policy"></a><font size="4" style="font-size: 14pt">Policies
+used to store blobs:</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">BLOB_IDS_NONE
 – inline blobs can't be used (registerBlob() works anyway)</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">BLOB_IDS_ENGINE
@@ -1653,13 +1928,13 @@ created) detailed information about the results of batch execution.</font></p>
 	that status is returned in separate ‘to’ parameter unlike errors
 	in this call that are placed into ‘status’ parameter.</font></p>
 </ol>
-<p style="margin-bottom: 0in">  <font size="4" style="font-size: 14pt">Special
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">Special
 values returned by getState():</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">EXECUTE_FAILED
 - error happened when processing this message</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">SUCCESS_NO_INFO
 - record update info was not collected</font></p>
-<p style="margin-bottom: 0in">  <font size="4" style="font-size: 14pt">Special
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">Special
 value returned by findError():</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">NO_MORE_ERRORS
 – no more messages with errors in this batch</font></p>
@@ -2048,9 +2323,20 @@ with execution of SQL statements.</font></p>
 	getBuilder(StatusType* status) - returns <a href="#MessageMetadata">MetadataBuilder</a>
 	interface initialized with this message metadata.</font></p>
 	<li/>
-<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">unsigned
+<p><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">unsigned
 	getMessageLength(StatusType* status) - returns length of message
-	buffer (use it to allocate memory for the buffer).</font></p>
+	buffer (use it to allocate memory for the buffer).</font></font></p>
+	<li/>
+<p><font color="#000000"><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt"><span style="background: #ffffff">unsigned
+	</span></font></font></font><font color="#000000"><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt"><span style="background: #ffffff">getAlignment(StatusType*
+	status) – </span></font></font></font><font color="#000000"><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt"><span style="background: #ffffff">returns
+	alignment required for message buffer.</span></font></font></font></p>
+	<li/>
+<p><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">u</font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">nsigned</font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">
+	getAlignedLength(StatusType* status) – </font></font><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">returns
+	length of message buffer taking into an account alignment
+	requirements (use it to allocate memory for an array of buffers and
+	navigate through that array).</font></font></p>
 </ol>
 <p style="margin-bottom: 0in"><br/>
 
@@ -2433,32 +2719,42 @@ interface – replaces (partially) isc_stmt_handle.</font></p>
 	getOutputMetadata(StatusType* status) – returns output values
 	metadata.</font></p>
 	<li/>
-<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">ITransaction*
+<p style="margin-bottom: 0in"><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">ITransaction*
 	execute(StatusType* status, ITransaction* transaction,
 	IMessageMetadata* inMetadata, void* inBuffer, IMessageMetadata*
 	outMetadata, void* outBuffer) – executes any SQL statement except
 	returning multiple rows of data. Partial analogue of
 	isc_dsql_execute2() - in and out XSLQDAs replaced with input and
-	output messages with appropriate buffers.</font></p>
+	output messages with appropriate buffers.</font></font></p>
 	<li/>
-<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">IResultSet*
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><font face="Liberation Serif, serif">IResultSet*
 	openCursor(StatusType* status, ITransaction* transaction,
 	IMessageMetadata* inMetadata, void* inBuffer, IMessageMetadata*
 	outMetadata, unsigned flags) – executes SQL statement potentially
-	returning multiple rows of data. Returns ResultSet interface which
-	should be used to fetch that data. Format of output data is defined
-	by outMetadata parameter, leaving it NULL default format may be
-	used. Parameter flags is needed to open bidirectional cursor setting
-	it's value to Istatement::CURSOR_TYPE_SCROLLABLE.</font></p>
+	returning multiple rows of data. Returns <a href="#ResultSet">ResultSet</a>
+	interface which should be used to fetch that data. Format of output
+	data is defined by outMetadata parameter, leaving it NULL default
+	format may be used. Parameter flags is needed to open bidirectional
+	cursor setting it's value to Istatement::CURSOR_TYPE_SCROLLABLE.</font></font></p>
 	<li/>
-<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><font face="Liberation Serif, serif">IBatch*
+	createBatch(StatusType* status, </font><font face="Liberation Serif, serif">I</font><font face="Liberation Serif, serif">MessageMetadata*
+	inMetadata, uint parLength, const uchar* par) – </font><font face="Liberation Serif, serif">creates
+	<a href="#Batch">Batch</a> interface to SQL statement with input
+	parameters making it possible to execute that statement with
+	multiple sets of parameters. Format of input data is defined by
+	inMetadata parameter, leaving it NULL makes batch use default format
+	from this interface. Parameters block may be passed to createBatch()
+	making it possible to adjust batch behavior.</font></font></p>
+	<li/>
+<p style="margin-bottom: 0in"><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">void
 	setCursorName(StatusType* status, const char* name) – replaces
-	isc_dsql_set_cursor_name(). </font>
+	isc_dsql_set_cursor_name(). </font></font>
 	</p>
 	<li/>
-<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">void
-	free(StatusType* status) – free statement, releases interface on
-	success.</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt"><font face="Liberation Serif, serif">void
+	free(StatusType* status) – free state</font>ment, releases
+	interface on success.</font></p>
 	<li/>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">unsigned
 	getFlags(StatusType* status) – returns <a href="#Values returned by getFlags">flags</a>
@@ -2879,6 +3175,7 @@ defined by XpbBuilder interface:</font></p>
 </p>
 <p style="margin-bottom: 0in"><a name="Valid builder types"></a><font size="4" style="font-size: 14pt">Valid
 builder types:</font></p>
+<p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">BATCH</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">DPB</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">SPB_ATTACH</font></p>
 <p style="margin-bottom: 0in"><font size="4" style="font-size: 14pt">SPB_START</font></p>

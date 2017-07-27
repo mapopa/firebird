@@ -313,7 +313,7 @@ int main()
 		batch = NULL;
 
 		//
-		// Part 3. BLOB stream.
+		// Part 3. BLOB stream. BLOB created using IBlob interface.
 		//
 
 		// use Msg2/project2/sqlStmt2 to store in a table
@@ -358,6 +358,24 @@ int main()
 		putBlob(stream, d3, strlen(d3), blobAlign, &v3);
 
 		batch->addBlobStream(&status, stream - streamStart, streamStart);
+
+		// execute it
+		cs = batch->execute(&status, tra);
+		print_cs(status, cs, utl);
+
+		// send blob created using standard API
+
+		ISC_QUAD realId;
+		IBlob* blob = att->createBlob(&status, tra, &realId, 0, NULL);
+		const char* text = "Blob created using traditional API";
+		blob->putSegment(&status, strlen(text), text);
+		blob->close(&status);
+
+		project2->id.set("BAT35");
+		project2->name.set("FRGN_BLB");
+		project2->desc = v1;	// after execute may reuse IDs
+		batch->registerBlob(&status, &realId, &project2->desc);
+		batch->add(&status, 1, project2.getData());
 
 		// execute it
 		cs = batch->execute(&status, tra);
