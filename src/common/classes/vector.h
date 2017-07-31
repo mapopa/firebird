@@ -156,12 +156,14 @@ public:
 	}
 
 protected:
-	FB_SIZE_T count;
 	union
 	{
-		T data[Capacity];
+		FB_SIZE_T count;
 		A align;
 	};
+	// Do not insert data memebers between align and data:
+	// alignment of data is ensured by preceding union
+	T data[Capacity];
 };
 
 // Template for default value comparsion
