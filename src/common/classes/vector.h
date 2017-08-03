@@ -126,17 +126,17 @@ public:
 		return data[count];
 	}
 
-	void push(const T* items, const FB_SIZE_T itemsSize)
+	void push(const T* items, const FB_SIZE_T itemsCount)
 	{
-		fb_assert(count <= FB_MAX_SIZEOF - itemsSize);
-		fb_assert(count + itemsSize <= Capacity);
-		memcpy(data + count, items, sizeof(T) * itemsSize);
-		count += itemsSize;
+		fb_assert(count <= FB_MAX_SIZEOF - itemsCount);
+		fb_assert(count + itemsCount <= Capacity);
+		memcpy(data + count, items, sizeof(T) * itemsCount);
+		count += itemsCount;
 	}
 
-	void append(const T* items, const FB_SIZE_T itemsSize)
+	void append(const T* items, const FB_SIZE_T itemsCount)
 	{
-		push(items, itemsSize);
+		push(items, itemsCount);
 	}
 
 
