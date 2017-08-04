@@ -54,15 +54,9 @@ public:
 		Firebird::ClumpletReader& pb);
 	~DsqlBatch();
 
-#ifdef DEV_BUILD
-	static const ULONG RAM_BATCH = 256;
-	static const ULONG BUFFER_LIMIT = 2 * 1024;
-	static const ULONG DETAILED_LIMIT = 4;
-#else // DEV_BUILD
 	static const ULONG RAM_BATCH = 128 * 1024;
 	static const ULONG BUFFER_LIMIT = 10 * 1024 * 1024;
 	static const ULONG DETAILED_LIMIT = 64;
-#endif // DEV_BUILD
 	static const ULONG SIZEOF_BLOB_HEAD = sizeof(ISC_QUAD) + sizeof(ULONG);
 	static const unsigned BLOB_STREAM_ALIGN = 4;
 
