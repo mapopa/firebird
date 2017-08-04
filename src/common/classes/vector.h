@@ -161,7 +161,7 @@ protected:
 		FB_SIZE_T count;
 		A align;
 	};
-	// Do not insert data memebers between align and data:
+	// Do not insert data members between align and data:
 	// alignment of data is ensured by preceding union
 	T data[Capacity];
 };

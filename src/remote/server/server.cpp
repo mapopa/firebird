@@ -3495,6 +3495,7 @@ void rem_port::batch_exec(P_BATCH_EXEC* batch, PACKET* sendL)
 	check(&status_vector);
 	pcs->p_batch_updates = recordCounts ? pcs->p_batch_reccount : 0;
 	pcs->p_batch_errors = pcs->p_batch_vectors = 0;
+
 	for (unsigned int pos = 0u;
 		 (pos = ics->findError(&status_vector, pos)) != IBatchCompletionState::NO_MORE_ERRORS;
 		 ++pos)
@@ -3508,6 +3509,7 @@ void rem_port::batch_exec(P_BATCH_EXEC* batch, PACKET* sendL)
 		else
 			pcs->p_batch_vectors++;
 	}
+
 	check(&status_vector);
 
 	statement->rsr_batch_ics = ics;

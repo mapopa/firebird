@@ -40,7 +40,7 @@ using namespace Firebird;
 using namespace Jrd;
 
 namespace {
-	const char* TEMP_NAME = "fb_batch";
+	const char* const TEMP_NAME = "fb_batch";
 	const UCHAR blobParameters[] = {isc_bpb_version1, isc_bpb_type, 1, isc_bpb_type_stream};
 
 	class JTrans : public Firebird::Transliterate
@@ -95,7 +95,8 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 	for (pb.rewind(); !pb.isEof(); pb.moveNext())
 	{
 		UCHAR t = pb.getClumpTag();
-		switch(t)
+
+		switch (t)
 		{
 		case IBatch::MULTIERROR:
 		case IBatch::RECORD_COUNTS:
@@ -107,7 +108,8 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 
 		case IBatch::BLOB_IDS:
 			m_blobPolicy = pb.getInt();
-			switch(m_blobPolicy)
+
+			switch (m_blobPolicy)
 			{
 			case IBatch::BLOB_IDS_ENGINE:
 			case IBatch::BLOB_IDS_USER:
@@ -117,6 +119,7 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 				m_blobPolicy = IBatch::BLOB_IDS_NONE;
 				break;
 			}
+
 			break;
 
 		case IBatch::DETAILED_ERRORS:
@@ -136,11 +139,13 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 	// parse message to detect blobs
 	unsigned fieldsCount = m_meta->getCount(&st);
 	check(&st);
+
 	for (unsigned i = 0; i < fieldsCount; ++i)
 	{
 		unsigned t = m_meta->getType(&st, i);
 		check(&st);
-		switch(t)
+
+		switch (t)
 		{
 		case SQL_BLOB:
 		case SQL_ARRAY:
@@ -218,7 +223,7 @@ DsqlBatch* DsqlBatch::open(thread_db* tdbb, dsql_req* req, IMessageMetadata* inM
 		          Arg::Gds(isc_bad_req_handle));
 	}
 
-	switch(statement->getType())
+	switch (statement->getType())
 	{
 		case DsqlCompiledStatement::TYPE_INSERT:
 		case DsqlCompiledStatement::TYPE_DELETE:
@@ -279,7 +284,7 @@ void DsqlBatch::blobCheckMode(bool stream, const char* fname)
 {
 	blobCheckMeta();
 
-	switch(m_blobPolicy)
+	switch (m_blobPolicy)
 	{
 	case IBatch::BLOB_IDS_ENGINE:
 	case IBatch::BLOB_IDS_USER:
@@ -488,12 +493,14 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 					byteCount += dataSize;
 					remains -= dataSize;
 					currentBlobSize -= dataSize;
+
 					if (!currentBlobSize)
 					{
 						blob->BLB_close(tdbb);
 						blob = nullptr;
 					}
 				}
+
 				m_blobs.remained(0);
 			}
 
@@ -501,7 +508,7 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 			if (blob)
 				blob->BLB_cancel(tdbb);
 		}
-		catch(const Exception&)
+		catch (const Exception&)
 		{
 			if (blob)
 				blob->BLB_cancel(tdbb);
@@ -595,12 +602,14 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 
 				JTrans jtr(tdbb);
 				completionState->regError(&status, &jtr);
+
 				if (!(m_flags & (1 << IBatch::MULTIERROR)))
 				{
 					cancel(tdbb);
 					remains = 0;
 					break;
 				}
+
 				startRequest = true;
 			}
 		}
@@ -668,8 +677,10 @@ void DsqlBatch::DataCache::put3(const void* data, ULONG dataSize, ULONG offset)
 void DsqlBatch::DataCache::put(const void* d, ULONG dataSize)
 {
 	if (m_used + (m_cache ? m_cache->getCount() : 0) + dataSize > m_limit)
+	{
 		ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
 			  Arg::Gds(isc_random) << "Internal buffer overflow - batch too big");
+	}
 
 	const UCHAR* data = reinterpret_cast<const UCHAR*>(d);
 
@@ -695,6 +706,7 @@ void DsqlBatch::DataCache::put(const void* d, ULONG dataSize)
 		// swap ram cache to tempspace
 		if (!m_space)
 			m_space = FB_NEW_POOL(getPool()) TempSpace(getPool(), TEMP_NAME);
+
 		const FB_UINT64 writtenBytes = m_space->write(m_used, m_cache->begin(), m_cache->getCount());
 		fb_assert(writtenBytes == m_cache->getCount());
 		m_used += m_cache->getCount();
@@ -740,6 +752,7 @@ bool DsqlBatch::DataCache::done()
 		m_used += m_cache->getCount();
 		m_cache->clear();
 	}
+
 	return true;
 }
 

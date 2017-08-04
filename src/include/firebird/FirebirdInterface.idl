@@ -453,8 +453,11 @@ version:	// 3.0 => 4.0
 
 	// Batch API
 	Batch createBatch(Status status, MessageMetadata inMetadata, uint parLength, const uchar* par);
-//	Pipe createPipe(Status status, Transaction transaction, MessageMetadata inMetadata,
-//		void* inBuffer, MessageMetadata outMetadata, uint parLength, const uchar* par);
+
+	/*
+	Pipe createPipe(Status status, Transaction transaction, MessageMetadata inMetadata,
+		void* inBuffer, MessageMetadata outMetadata, uint parLength, const uchar* par);
+	*/
 }
 
 interface Batch : ReferenceCounted
@@ -495,6 +498,7 @@ interface BatchCompletionState : Disposable
 	uint findError(Status status, uint pos);
 	void getStatus(Status status, Status to, uint pos);
 }
+
 /*
 interface Pipe : ReferenceCounted
 {
@@ -503,6 +507,7 @@ interface Pipe : ReferenceCounted
 	void close(Status status);
 }
 */
+
 interface Request : ReferenceCounted
 {
 	void receive(Status status, int level, uint msgType,
@@ -591,9 +596,11 @@ version:	// 3.0 => 4.0
 	// Batch API
 	Batch createBatch(Status status, Transaction transaction, uint stmtLength, const string sqlStmt,
 		uint dialect, MessageMetadata inMetadata, uint parLength, const uchar* par);
-/*	Pipe createPipe(Status status, uint stmtLength, const string sqlStmt, uint dialect,
+	/*
+	Pipe createPipe(Status status, uint stmtLength, const string sqlStmt, uint dialect,
 		Transaction transaction, MessageMetadata inMetadata, void* inBuffer,
-		MessageMetadata outMetadata, uint parLength, const uchar* par);*/
+		MessageMetadata outMetadata, uint parLength, const uchar* par);
+	*/
 }
 
 interface Service : ReferenceCounted

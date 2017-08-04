@@ -4815,6 +4815,7 @@ void YBatch::destroy(unsigned dstrFlags)
 	destroy2(dstrFlags);
 }
 
+
 void YBatch::add(CheckStatusWrapper* status, unsigned count, const void* inBuffer)
 {
 	try
@@ -4887,6 +4888,7 @@ unsigned YBatch::getBlobAlignment(CheckStatusWrapper* status)
 	{
 		e.stuffException(status);
 	}
+
 	return 0;
 }
 
@@ -4903,6 +4905,7 @@ IMessageMetadata* YBatch::getMetadata(CheckStatusWrapper* status)
 	{
 		e.stuffException(status);
 	}
+
 	return 0;
 }
 

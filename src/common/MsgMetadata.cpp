@@ -306,6 +306,7 @@ unsigned MsgMetadata::makeOffsets()
 			length = alignment = 0;
 			return n;
 		}
+
 		unsigned dtype;
 		length = fb_utils::sqlTypeToDsc(length, param->type, param->length,
 			&dtype, NULL /*length*/, &param->offset, &param->nullInd);
@@ -315,6 +316,7 @@ unsigned MsgMetadata::makeOffsets()
 			length = alignment = 0;
 			return n;
 		}
+
 		alignment = MAX(alignment, type_alignments[dtype]);
 	}
 

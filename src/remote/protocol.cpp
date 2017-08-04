@@ -867,6 +867,7 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			{
 				statement = port->port_statement;
 			}
+
 			if (!statement)
 				return P_FALSE(xdrs, p);
 
@@ -926,6 +927,7 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			SSHORT statement_id = b->p_batch_statement;
 			DEB_BATCH(fprintf(stderr, "BatRem: xdr CS %d\n", statement_id));
 			Rsr* statement;
+
 			if (statement_id >= 0)
 			{
 				if (static_cast<ULONG>(statement_id) >= port->port_objects.getCount())
@@ -944,6 +946,7 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			{
 				statement = port->port_statement;
 			}
+
 			if (!statement)
 				return P_FALSE(xdrs, p);
 
@@ -961,12 +964,15 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			for (unsigned i = 0; i < b->p_batch_updates; ++i)
 			{
 				SLONG v;
+
 				if (xdrs->x_op == XDR_ENCODE)
 				{
 					v = statement->rsr_batch_ics->getState(&status_vector, i);
 					P_CHECK(xdrs, p, status_vector);
 				}
+
 				MAP(xdr_long, v);
+
 				if (xdrs->x_op == XDR_DECODE)
 				{
 					statement->rsr_batch_cs->regUpdate(v);
@@ -977,10 +983,12 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			ULONG pos = 0u;
 			LocalStatus to;
 			DEB_BATCH(fprintf(stderr, "BatRem: xdr sv %d\n", b->p_batch_vectors));
+
 			for (unsigned i = 0; i < b->p_batch_vectors; ++i, ++pos)
 			{
 				DynamicStatusVector s;
 				DynamicStatusVector* ptr = NULL;
+
 				if (xdrs->x_op == XDR_ENCODE)
 				{
 					pos = statement->rsr_batch_ics->findError(&status_vector, pos);
@@ -991,12 +999,16 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 					statement->rsr_batch_ics->getStatus(&status_vector, &to, pos);
 					if (status_vector.getState() & IStatus::STATE_ERRORS)
 						continue;
+
 					s.load(&to);
 					ptr = &s;
 				}
+
 				MAP(xdr_u_long, pos);
+
 				if (!xdr_status_vector(xdrs, ptr))
 					return P_FALSE(xdrs, p);
+
 				if (xdrs->x_op == XDR_DECODE)
 				{
 					Firebird::Arg::StatusVector sv(ptr->value());
@@ -1009,6 +1021,7 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			// Process status-less errors
 			pos = 0u;
 			DEB_BATCH(fprintf(stderr, "BatRem: xdr err %d\n", b->p_batch_errors));
+
 			for (unsigned i = 0; i < b->p_batch_errors; ++i, ++pos)
 			{
 				if (xdrs->x_op == XDR_ENCODE)
@@ -1022,7 +1035,9 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 					if (!(status_vector.getState() & IStatus::STATE_ERRORS))
 						continue;
 				}
+
 				MAP(xdr_u_long, pos);
+
 				if (xdrs->x_op == XDR_DECODE)
 				{
 					statement->rsr_batch_cs->regErrorAt(pos, nullptr);
@@ -1069,16 +1084,19 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 		{
 			P_BATCH_BLOB* b = &p->p_batch_blob;
 			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
+
 			if (xdrs->x_op == XDR_FREE)
 			{
 				MAP(xdr_cstring, b->p_batch_blob_data);
 				return P_TRUE(xdrs, p);
 			}
+
 			MAP(xdr_u_long, b->p_batch_blob_data.cstr_length);
 
 			rem_port* port = (rem_port*) xdrs->x_public;
 			SSHORT statement_id = b->p_batch_statement;
 			Rsr* statement;
+
 			if (statement_id >= 0)
 			{
 				if (static_cast<ULONG>(statement_id) >= port->port_objects.getCount())
@@ -1097,15 +1115,18 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			{
 				statement = port->port_statement;
 			}
+
 			if (!statement)
 				return P_FALSE(xdrs, p);
 
 			ULONG size = b->p_batch_blob_data.cstr_length;
 			fb_assert(!(size & 3));		// according to current blob stream alignment
+
 			if (!size)
 			{
 				return P_TRUE(xdrs, p);
 			}
+
 			if (xdrs->x_op == XDR_DECODE)
 			{
 				alloc_cstring(xdrs, &b->p_batch_blob_data);
@@ -1127,7 +1148,7 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 					{
 					case XDR_ENCODE:
 						if (!xdrs->x_ops->x_putbytes(xdrs,
-							reinterpret_cast<const SCHAR*>(s), portion))
+								reinterpret_cast<const SCHAR*>(s), portion))
 						{
 							return P_FALSE(xdrs, p);
 						}
@@ -1135,7 +1156,7 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 
 					case XDR_DECODE:
 						if (!xdrs->x_ops->x_getbytes(xdrs,
-							reinterpret_cast<SCHAR*>(s), portion))
+								reinterpret_cast<SCHAR*>(s), portion))
 						{
 							return P_FALSE(xdrs, p);
 						}

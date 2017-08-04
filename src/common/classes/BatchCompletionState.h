@@ -47,6 +47,17 @@ namespace Firebird {
 				array = FB_NEW_POOL(getPool()) DenseArray(getPool());
 		}
 
+		~BatchCompletionState()
+		{
+			for (unsigned i = 0; i < rare.getCount() && rare[i].second; ++i)
+				rare[i].second->dispose();
+		}
+
+		void dispose()
+		{
+			delete this;
+		}
+
 		void regError(IStatus* errStatus, Transliterate* transliterate)
 		{
 			IStatus* newVector = nullptr;
@@ -146,17 +157,6 @@ namespace Firebird {
 			{
 				ex.stuffException(status);
 			}
-		}
-
-		void dispose()
-		{
-			delete this;
-		}
-
-		~BatchCompletionState()
-		{
-			for (unsigned i = 0; i < rare.getCount() && rare[i].second; ++i)
-				rare[i].second->dispose();
 		}
 
 	private:

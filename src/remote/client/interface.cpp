@@ -335,7 +335,8 @@ public:
 		for (rdr.rewind(); !rdr.isEof(); rdr.moveNext())
 		{
 			UCHAR t = rdr.getClumpTag();
-			switch(t)
+
+			switch (t)
 			{
 			case MULTIERROR:
 			case RECORD_COUNTS:
@@ -347,7 +348,8 @@ public:
 
 			case BLOB_IDS:
 				blobPolicy = rdr.getInt();
-				switch(blobPolicy)
+
+				switch (blobPolicy)
 				{
 				case BLOB_IDS_ENGINE:
 				case BLOB_IDS_USER:
@@ -357,6 +359,7 @@ public:
 					blobPolicy = BLOB_IDS_NONE;
 					break;
 				}
+
 				break;
 			}
 		}
@@ -2036,6 +2039,7 @@ Batch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMe
 			check(status);
 			inMetadata = meta;
 		}
+
 		BlrFromMessage inBlr(inMetadata, dialect, port->port_protocol);
 		const unsigned int in_blr_length = inBlr.getLength();
 		const UCHAR* const in_blr = inBlr.getBytes();
@@ -2047,6 +2051,7 @@ Batch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMe
 
 		delete statement->rsr_bind_format;
 		statement->rsr_bind_format = NULL;
+
 		if (port->port_statement)
 		{
 			delete port->port_statement->rsr_select_format;
@@ -2067,9 +2072,8 @@ Batch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMe
 
 			statement->rsr_fmt_length = 0;
 		}
-		else {
+		else
 			message = statement->rsr_message = statement->rsr_buffer;
-		}
 
 		statement->rsr_flags.clear(Rsr::FETCHED);
 		statement->rsr_format = statement->rsr_bind_format;
@@ -2100,6 +2104,7 @@ Batch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMe
 	{
 		ex.stuffException(status);
 	}
+
 	return NULL;
 }
 
@@ -2114,6 +2119,7 @@ void Batch::add(CheckStatusWrapper* status, unsigned count, const void* inBuffer
 		{
 			Arg::Gds(isc_bad_req_handle).raise();
 		}
+
 		Rsr* statement = stmt->getStatement();
 		CHECK_HANDLE(statement, isc_bad_req_handle);
 		Rdb* rdb = statement->rsr_rdb;
@@ -2129,7 +2135,7 @@ void Batch::add(CheckStatusWrapper* status, unsigned count, const void* inBuffer
 		P_BATCH_MSG* batch = &packet->p_batch_msg;
 		batch->p_batch_statement = statement->rsr_id;
 		batch->p_batch_messages = count;
-		batch->p_batch_data.cstr_address = (UCHAR*)inBuffer;
+		batch->p_batch_data.cstr_address = (UCHAR*) inBuffer;
 		statement->rsr_batch_size = alignedSize;
 
 		send_partial_packet(port, packet);
@@ -2152,6 +2158,7 @@ void Batch::addBlob(CheckStatusWrapper* status, unsigned length, const void* inB
 		{
 			Arg::Gds(isc_bad_req_handle).raise();
 		}
+
 		Rsr* statement = stmt->getStatement();
 		CHECK_HANDLE(statement, isc_bad_req_handle);
 		Rdb* rdb = statement->rsr_rdb;
@@ -2167,7 +2174,7 @@ void Batch::addBlob(CheckStatusWrapper* status, unsigned length, const void* inB
 		P_BATCH_BLOB* batch = &packet->p_batch_blob;
 		batch->p_batch_statement = statement->rsr_id;
 		batch->p_batch_blob_id = *blobId;
-		batch->p_batch_blob_data.cstr_address = (UCHAR*)inBuffer;
+		batch->p_batch_blob_data.cstr_address = (UCHAR*) inBuffer;
 		batch->p_batch_blob_data.cstr_length = length;
 
 		send_partial_packet(port, packet);
@@ -2190,6 +2197,7 @@ void Batch::appendBlobData(CheckStatusWrapper* status, unsigned length, const vo
 		{
 			Arg::Gds(isc_bad_req_handle).raise();
 		}
+
 		Rsr* statement = stmt->getStatement();
 		CHECK_HANDLE(statement, isc_bad_req_handle);
 		Rdb* rdb = statement->rsr_rdb;
@@ -2201,7 +2209,7 @@ void Batch::appendBlobData(CheckStatusWrapper* status, unsigned length, const vo
 		packet->p_operation = op_batch_addblob;
 		P_BATCH_BLOB* batch = &packet->p_batch_blob;
 		batch->p_batch_statement = statement->rsr_id;
-		batch->p_batch_blob_data.cstr_address = (UCHAR*)inBuffer;
+		batch->p_batch_blob_data.cstr_address = (UCHAR*) inBuffer;
 		batch->p_batch_blob_data.cstr_length = length;
 
 		send_partial_packet(port, packet);
@@ -2224,6 +2232,7 @@ void Batch::addBlobStream(CheckStatusWrapper* status, unsigned length, const voi
 		{
 			Arg::Gds(isc_bad_req_handle).raise();
 		}
+
 		Rsr* statement = stmt->getStatement();
 		CHECK_HANDLE(statement, isc_bad_req_handle);
 		Rdb* rdb = statement->rsr_rdb;
@@ -2235,7 +2244,7 @@ void Batch::addBlobStream(CheckStatusWrapper* status, unsigned length, const voi
 		packet->p_operation = op_batch_blob_stream;
 		P_BATCH_BLOB* batch = &packet->p_batch_blob;
 		batch->p_batch_statement = statement->rsr_id;
-		batch->p_batch_blob_data.cstr_address = (UCHAR*)inBuffer;
+		batch->p_batch_blob_data.cstr_address = (UCHAR*) inBuffer;
 		batch->p_batch_blob_data.cstr_length = length;
 
 		send_partial_packet(port, packet);
@@ -2261,6 +2270,7 @@ unsigned Batch::getBlobAlignment(CheckStatusWrapper* status)
 		{
 			Arg::Gds(isc_bad_req_handle).raise();
 		}
+
 		Rsr* statement = stmt->getStatement();
 		CHECK_HANDLE(statement, isc_bad_req_handle);
 		Rdb* rdb = statement->rsr_rdb;
@@ -2287,6 +2297,7 @@ unsigned Batch::getBlobAlignment(CheckStatusWrapper* status)
 	{
 		ex.stuffException(status);
 	}
+
 	return 0;
 }
 
@@ -2310,6 +2321,7 @@ void Batch::registerBlob(CheckStatusWrapper* status, const ISC_QUAD* existingBlo
 		{
 			Arg::Gds(isc_bad_req_handle).raise();
 		}
+
 		Rsr* statement = stmt->getStatement();
 		CHECK_HANDLE(statement, isc_bad_req_handle);
 		Rdb* rdb = statement->rsr_rdb;
@@ -2347,6 +2359,7 @@ IBatchCompletionState* Batch::execute(CheckStatusWrapper* status, ITransaction* 
 		{
 			Arg::Gds(isc_bad_req_handle).raise();
 		}
+
 		Rsr* statement = stmt->getStatement();
 		CHECK_HANDLE(statement, isc_bad_req_handle);
 
@@ -2397,6 +2410,7 @@ IBatchCompletionState* Batch::execute(CheckStatusWrapper* status, ITransaction* 
 	{
 		ex.stuffException(status);
 	}
+
 	return nullptr;
 }
 
@@ -2423,6 +2437,7 @@ void Batch::freeClientData(CheckStatusWrapper* status, bool force)
 		{
 			Arg::Gds(isc_dsql_cursor_err).raise();
 		}
+
 		Rsr* statement = stmt->getStatement();
 		CHECK_HANDLE(statement, isc_bad_req_handle);
 		Rdb* rdb = statement->rsr_rdb;
@@ -2468,6 +2483,7 @@ void Batch::releaseStatement()
 	{
 		stmt->release();
 	}
+
 	stmt = NULL;
 }
 

@@ -6543,6 +6543,7 @@ const StmtNode* ReceiveNode::execute(thread_db* /*tdbb*/, jrd_req* request, ExeS
 		default:
 			break;
 	}
+
 	return parentStmt;
 }
 

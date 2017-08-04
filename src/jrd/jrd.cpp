@@ -5535,6 +5535,7 @@ JBatch* JStatement::createBatch(Firebird::CheckStatusWrapper* status, Firebird::
 			transliterateException(tdbb, ex, status, "JStatement::createBatch");
 			return NULL;
 		}
+
 		trace_warning(tdbb, status, "JStatement::createBatch");
 	}
 	catch (const Exception& ex)
@@ -5567,6 +5568,7 @@ int JBatch::release()
 
 	if (batch)
 		delete batch;
+
 	delete this;
 	return 0;
 }
@@ -5589,6 +5591,7 @@ void JBatch::add(CheckStatusWrapper* status, unsigned count, const void* inBuffe
 			transliterateException(tdbb, ex, status, "JBatch::add");
 			return;
 		}
+
 		trace_warning(tdbb, status, "JBatch::add");
 	}
 	catch (const Exception& ex)
@@ -5618,6 +5621,7 @@ void JBatch::addBlob(CheckStatusWrapper* status, unsigned length, const void* in
 			transliterateException(tdbb, ex, status, "JBatch::addBlob");
 			return;
 		}
+
 		trace_warning(tdbb, status, "JBatch::addBlob");
 	}
 	catch (const Exception& ex)
@@ -5647,6 +5651,7 @@ void JBatch::appendBlobData(CheckStatusWrapper* status, unsigned length, const v
 			transliterateException(tdbb, ex, status, "JBatch::appendBlobData");
 			return;
 		}
+
 		trace_warning(tdbb, status, "JBatch::appendBlobData");
 	}
 	catch (const Exception& ex)
@@ -5676,6 +5681,7 @@ void JBatch::addBlobStream(CheckStatusWrapper* status, unsigned length, const vo
 			transliterateException(tdbb, ex, status, "JBatch::addBlobStream");
 			return;
 		}
+
 		trace_warning(tdbb, status, "JBatch::addBlobStream");
 	}
 	catch (const Exception& ex)
@@ -5712,6 +5718,7 @@ IMessageMetadata* JBatch::getMetadata(CheckStatusWrapper* status)
 			transliterateException(tdbb, ex, status, "JBatch::getMetadata");
 			return NULL;
 		}
+
 		trace_warning(tdbb, status, "JBatch::getMetadata");
 	}
 	catch (const Exception& ex)
@@ -5742,6 +5749,7 @@ void JBatch::registerBlob(CheckStatusWrapper* status, const ISC_QUAD* existingBl
 			transliterateException(tdbb, ex, status, "JBatch::registerBlob");
 			return;
 		}
+
 		trace_warning(tdbb, status, "JBatch::registerBlob");
 	}
 	catch (const Exception& ex)
@@ -5782,6 +5790,7 @@ IBatchCompletionState* JBatch::execute(CheckStatusWrapper* status, ITransaction*
 			transliterateException(tdbb, ex, status, "JBatch::execute");
 			return NULL;
 		}
+
 		trace_warning(tdbb, status, "JBatch::execute");
 	}
 	catch (const Exception& ex)
@@ -5812,6 +5821,7 @@ void JBatch::cancel(CheckStatusWrapper* status)
 			transliterateException(tdbb, ex, status, "JBatch::cancel");
 			return;
 		}
+
 		trace_warning(tdbb, status, "JBatch::cancel");
 	}
 	catch (const Exception& ex)
