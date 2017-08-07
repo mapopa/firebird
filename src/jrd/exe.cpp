@@ -1233,12 +1233,6 @@ static void stuff_stack_trace(const jrd_req* request)
 }
 
 
-namespace Jrd
-{
-bool treePrt = false;
-}
-
-
 const StmtNode* EXE_looper(thread_db* tdbb, jrd_req* request, const StmtNode* node)
 {
 /**************************************
