@@ -98,15 +98,15 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 
 		switch (t)
 		{
-		case IBatch::MULTIERROR:
-		case IBatch::RECORD_COUNTS:
+		case IBatch::TAG_MULTIERROR:
+		case IBatch::TAG_RECORD_COUNTS:
 			if (pb.getInt())
 				m_flags |= (1 << t);
 			else
 				m_flags &= ~(1 << t);
 			break;
 
-		case IBatch::BLOB_IDS:
+		case IBatch::TAG_BLOB_IDS:
 			m_blobPolicy = pb.getInt();
 
 			switch (m_blobPolicy)
@@ -122,13 +122,13 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 
 			break;
 
-		case IBatch::DETAILED_ERRORS:
+		case IBatch::TAG_DETAILED_ERRORS:
 			m_detailed = pb.getInt();
 			if (m_detailed > DETAILED_LIMIT * 4)
 				m_detailed = DETAILED_LIMIT * 4;
 			break;
 
-		case IBatch::BUFFER_BYTES_SIZE:
+		case IBatch::TAG_BUFFER_BYTES_SIZE:
 			m_bufferSize = pb.getInt();
 			if (m_bufferSize > BUFFER_LIMIT * 4)
 				m_bufferSize = BUFFER_LIMIT * 4;
@@ -523,7 +523,7 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 
 	// prepare completion interface
 	AutoPtr<BatchCompletionState, SimpleDispose<BatchCompletionState> > completionState
-		(FB_NEW BatchCompletionState(m_flags & (1 << IBatch::RECORD_COUNTS), m_detailed));
+		(FB_NEW BatchCompletionState(m_flags & (1 << IBatch::TAG_RECORD_COUNTS), m_detailed));
 	AutoSetRestore<bool> batchFlag(&req->req_batch, true);
 	const dsql_msg* message = m_request->getStatement()->getSendMsg();
 	bool startRequest = true;
@@ -603,7 +603,7 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 				JTrans jtr(tdbb);
 				completionState->regError(&status, &jtr);
 
-				if (!(m_flags & (1 << IBatch::MULTIERROR)))
+				if (!(m_flags & (1 << IBatch::TAG_MULTIERROR)))
 				{
 					cancel(tdbb);
 					remains = 0;

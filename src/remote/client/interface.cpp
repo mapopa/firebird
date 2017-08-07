@@ -338,15 +338,15 @@ public:
 
 			switch (t)
 			{
-			case MULTIERROR:
-			case RECORD_COUNTS:
+			case TAG_MULTIERROR:
+			case TAG_RECORD_COUNTS:
 				if (rdr.getInt())
 					flags |= (1 << t);
 				else
 					flags &= ~(1 << t);
 				break;
 
-			case BLOB_IDS:
+			case TAG_BLOB_IDS:
 				blobPolicy = rdr.getInt();
 
 				switch (blobPolicy)
@@ -2387,7 +2387,7 @@ IBatchCompletionState* Batch::execute(CheckStatusWrapper* status, ITransaction* 
 		statement->rsr_batch_size = alignedSize;
 		statement->rsr_batch_flags = flags;
 		AutoPtr<BatchCompletionState, SimpleDispose<BatchCompletionState> >
-			cs(FB_NEW BatchCompletionState(flags & (1 << IBatch::RECORD_COUNTS), 256));
+			cs(FB_NEW BatchCompletionState(flags & (1 << IBatch::TAG_RECORD_COUNTS), 256));
 		statement->rsr_batch_cs = cs;
 		receive_packet(port, packet);
 		statement->rsr_batch_cs = nullptr;

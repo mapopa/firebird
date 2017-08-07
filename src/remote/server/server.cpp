@@ -3363,13 +3363,13 @@ void rem_port::batch_create(P_BATCH_CREATE* batch, PACKET* sendL)
 		batch->p_batch_pb.cstr_address, batch->p_batch_pb.cstr_length);
 	if (wrt.getBufferLength() && (wrt.getBufferTag() != IBatch::VERSION1))
 		(Arg::Gds(isc_random) << "Invalid tag in parameters block").raise();
-	statement->rsr_batch_flags = (wrt.find(IBatch::RECORD_COUNTS) && wrt.getInt()) ?
-		(1 << IBatch::RECORD_COUNTS) : 0;
-	if (wrt.find(IBatch::BLOB_IDS) && (wrt.getInt() == IBatch::BLOB_IDS_ENGINE))
+	statement->rsr_batch_flags = (wrt.find(IBatch::TAG_RECORD_COUNTS) && wrt.getInt()) ?
+		(1 << IBatch::TAG_RECORD_COUNTS) : 0;
+	if (wrt.find(IBatch::TAG_BLOB_IDS) && (wrt.getInt() == IBatch::BLOB_IDS_ENGINE))
 	{
 		// we generate blob ids for further layers therefore change policy
 		wrt.deleteClumplet();
-		wrt.insertInt(IBatch::BLOB_IDS, IBatch::BLOB_IDS_USER);
+		wrt.insertInt(IBatch::TAG_BLOB_IDS, IBatch::BLOB_IDS_USER);
 	}
 
 	statement->rsr_batch =
@@ -3487,7 +3487,7 @@ void rem_port::batch_exec(P_BATCH_EXEC* batch, PACKET* sendL)
 		return;
 	}
 
-	bool recordCounts = statement->rsr_batch_flags & (1 << IBatch::RECORD_COUNTS);
+	bool recordCounts = statement->rsr_batch_flags & (1 << IBatch::TAG_RECORD_COUNTS);
 	P_BATCH_CS* pcs = &sendL->p_batch_cs;
 	sendL->p_operation = op_batch_cs;
 	pcs->p_batch_statement = statement->rsr_id;
