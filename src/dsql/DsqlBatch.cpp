@@ -43,10 +43,10 @@ namespace {
 	const char* const TEMP_NAME = "fb_batch";
 	const UCHAR blobParameters[] = {isc_bpb_version1, isc_bpb_type, 1, isc_bpb_type_stream};
 
-	class JTrans : public Firebird::Transliterate
+	class JTransliterate : public Firebird::Transliterate
 	{
 	public:
-		JTrans(thread_db* tdbb)
+		JTransliterate(thread_db* tdbb)
 			: m_tdbb(tdbb)
 		{ }
 
@@ -600,8 +600,8 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 				ex.stuffException(&status);
 				tdbb->tdbb_status_vector->init();
 
-				JTrans jtr(tdbb);
-				completionState->regError(&status, &jtr);
+				JTransliterate trLit(tdbb);
+				completionState->regError(&status, &trLit);
 
 				if (!(m_flags & (1 << IBatch::TAG_MULTIERROR)))
 				{
