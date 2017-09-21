@@ -1120,7 +1120,9 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 				return P_FALSE(xdrs, p);
 
 			ULONG size = b->p_batch_blob_data.cstr_length;
-			fb_assert(!(size & 3));		// according to current blob stream alignment
+			fb_assert(statement->rsr_batch_blb_algn);
+			if (size % statement->rsr_batch_blb_algn)
+				return P_FALSE(xdrs, p);
 
 			if (!size)
 			{
@@ -1132,7 +1134,7 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 				alloc_cstring(xdrs, &b->p_batch_blob_data);
 			}
 
-			ULONG& currentBlobSize(statement->rsr_batch_blob_size);
+			ULONG& currentBlobSize(statement->rsr_batch_blb_size);
 			UCHAR* s = b->p_batch_blob_data.cstr_address;
 
 			while (size)
@@ -1166,11 +1168,16 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 					s += portion;
 					currentBlobSize -= portion;
 
+					// align the stream
+					ULONG al = size % statement->rsr_batch_blb_algn;
+					size -= al;
+					s += al;
+
 					continue;
 				}
 
-				// We are at blob header in the stream - parse it
-				fb_assert(intptr_t(s) % 4 == 0);
+				// we are at blob header in the stream - parse it
+				fb_assert(intptr_t(s) % statement->rsr_batch_blb_algn == 0);
 
 				// safety check
 				const ULONG SIZEOF_BLOB_HEAD = sizeof(ISC_QUAD) + sizeof(ULONG);

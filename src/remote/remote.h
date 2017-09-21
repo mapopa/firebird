@@ -492,7 +492,8 @@ struct Rsr : public Firebird::GlobalStorage, public TypedHandle<rem_type_rsr>
 
 	ULONG			rsr_batch_size;		// Aligned message size for IBatch operations
 	ULONG			rsr_batch_flags;	// Flags for batch processing
-	ULONG			rsr_batch_blob_size;	// Remaining to transfer size of blob data
+	ULONG			rsr_batch_blb_size;	// Remaining to transfer size of blob data
+	USHORT			rsr_batch_blb_algn;	// Alignment in BLOB stream
 	union								// BatchCS passed to XDR protocol
 	{
 		Firebird::IBatchCompletionState* rsr_batch_ics;	// server

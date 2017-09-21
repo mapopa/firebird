@@ -2077,6 +2077,7 @@ Batch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMe
 
 		statement->rsr_flags.clear(Rsr::FETCHED);
 		statement->rsr_format = statement->rsr_bind_format;
+		statement->rsr_batch_blb_size = 0;
 		statement->clearException();
 
 		// set up the packet for the other guy...
@@ -2240,6 +2241,11 @@ void Batch::addBlobStream(CheckStatusWrapper* status, unsigned length, const voi
 		rem_port* port = rdb->rdb_port;
 		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
 
+		unsigned al = getBlobAlignment(status);		// will also set rsr_batch_blb_algn
+		if (length % al)
+			(Arg::Gds(isc_random) << "Portions of data, passed as blob stream, should have size "
+                "multiple to the alignment required for blobs").raise();
+
 		PACKET* packet = &rdb->rdb_packet;
 		packet->p_operation = op_batch_blob_stream;
 		P_BATCH_BLOB* batch = &packet->p_batch_blob;
@@ -2286,7 +2292,7 @@ unsigned Batch::getBlobAlignment(CheckStatusWrapper* status)
 		if (buffer[0] == item)
 		{
 			int len = gds__vax_integer(&buffer[1], 2);
-			blobAlign = gds__vax_integer(&buffer[3], len);
+			statement->rsr_batch_blb_algn = blobAlign = gds__vax_integer(&buffer[3], len);
 		}
 		else
 			(Arg::Gds(isc_random) << "Unexpected info buffer structure").raise();
