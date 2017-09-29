@@ -347,7 +347,8 @@ public:
 
 	// IBatch implementation
 	void add(Firebird::CheckStatusWrapper* status, unsigned count, const void* inBuffer);
-	void addBlob(Firebird::CheckStatusWrapper* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId);
+	void addBlob(Firebird::CheckStatusWrapper* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId,
+		unsigned parLength, const unsigned char* par);
 	void appendBlobData(Firebird::CheckStatusWrapper* status, unsigned length, const void* inBuffer);
 	void addBlobStream(Firebird::CheckStatusWrapper* status, unsigned length, const void* inBuffer);
 	unsigned getBlobAlignment(Firebird::CheckStatusWrapper* status);
@@ -355,6 +356,7 @@ public:
 	void registerBlob(Firebird::CheckStatusWrapper* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId);
 	Firebird::IBatchCompletionState* execute(Firebird::CheckStatusWrapper* status, Firebird::ITransaction* transaction);
 	void cancel(Firebird::CheckStatusWrapper* status);
+	void setDefaultBpb(Firebird::CheckStatusWrapper* status, unsigned parLength, const unsigned char* par);
 
 public:
 	YAttachment* attachment;

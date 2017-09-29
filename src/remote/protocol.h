@@ -285,6 +285,7 @@ enum P_OP
 	op_batch_addblob		= 105,
 	op_batch_regblob		= 106,
 	op_batch_blob_stream	= 107,
+	op_batch_set_bpb		= 108,
 
 	op_max
 };
@@ -696,6 +697,7 @@ typedef struct p_batch_blob
 {
 	OBJCT			p_batch_statement;	// statement object
 	SQUAD			p_batch_blob_id;	// blob id
+	CSTRING_CONST	p_batch_blob_bpb;	// BPB
 	CSTRING			p_batch_blob_data;	// data
 } P_BATCH_BLOB;
 
@@ -705,6 +707,12 @@ typedef struct p_batch_regblob
 	SQUAD			p_batch_exist_id;	// id of blob to register
 	SQUAD			p_batch_blob_id;	// blob id
 } P_BATCH_REGBLOB;
+
+typedef struct p_batch_setbpb
+{
+	OBJCT			p_batch_statement;	// statement object
+	CSTRING_CONST	p_batch_blob_bpb;	// BPB
+} P_BATCH_SETBPB;
 
 
 // Generalize packet (sic!)
@@ -757,6 +765,7 @@ typedef struct packet
 	P_BATCH_CS p_batch_cs;		// Batch completion state
 	P_BATCH_BLOB p_batch_blob;	// BLOB in batch
 	P_BATCH_REGBLOB p_batch_regblob;	// Register already existing BLOB in batch
+	P_BATCH_SETBPB p_batch_setbpb;		// Set default BPB for batch
 
 public:
 	packet()

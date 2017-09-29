@@ -1755,7 +1755,7 @@ namespace Firebird
 		struct VTable : public IReferenceCounted::VTable
 		{
 			void (CLOOP_CARG *add)(IBatch* self, IStatus* status, unsigned count, const void* inBuffer) throw();
-			void (CLOOP_CARG *addBlob)(IBatch* self, IStatus* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId) throw();
+			void (CLOOP_CARG *addBlob)(IBatch* self, IStatus* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId, unsigned parLength, const unsigned char* par) throw();
 			void (CLOOP_CARG *appendBlobData)(IBatch* self, IStatus* status, unsigned length, const void* inBuffer) throw();
 			void (CLOOP_CARG *addBlobStream)(IBatch* self, IStatus* status, unsigned length, const void* inBuffer) throw();
 			void (CLOOP_CARG *registerBlob)(IBatch* self, IStatus* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId) throw();
@@ -1763,6 +1763,7 @@ namespace Firebird
 			void (CLOOP_CARG *cancel)(IBatch* self, IStatus* status) throw();
 			unsigned (CLOOP_CARG *getBlobAlignment)(IBatch* self, IStatus* status) throw();
 			IMessageMetadata* (CLOOP_CARG *getMetadata)(IBatch* self, IStatus* status) throw();
+			void (CLOOP_CARG *setDefaultBpb)(IBatch* self, IStatus* status, unsigned parLength, const unsigned char* par) throw();
 		};
 
 	protected:
@@ -1788,6 +1789,7 @@ namespace Firebird
 		static const unsigned char BLOB_IDS_ENGINE = 1;
 		static const unsigned char BLOB_IDS_USER = 2;
 		static const unsigned char BLOB_IDS_STREAM = 3;
+		static const unsigned BLOB_SEGHDR_ALIGN = 2;
 
 		template <typename StatusType> void add(StatusType* status, unsigned count, const void* inBuffer)
 		{
@@ -1796,10 +1798,10 @@ namespace Firebird
 			StatusType::checkException(status);
 		}
 
-		template <typename StatusType> void addBlob(StatusType* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId)
+		template <typename StatusType> void addBlob(StatusType* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId, unsigned parLength, const unsigned char* par)
 		{
 			StatusType::clearException(status);
-			static_cast<VTable*>(this->cloopVTable)->addBlob(this, status, length, inBuffer, blobId);
+			static_cast<VTable*>(this->cloopVTable)->addBlob(this, status, length, inBuffer, blobId, parLength, par);
 			StatusType::checkException(status);
 		}
 
@@ -1853,6 +1855,13 @@ namespace Firebird
 			IMessageMetadata* ret = static_cast<VTable*>(this->cloopVTable)->getMetadata(this, status);
 			StatusType::checkException(status);
 			return ret;
+		}
+
+		template <typename StatusType> void setDefaultBpb(StatusType* status, unsigned parLength, const unsigned char* par)
+		{
+			StatusType::clearException(status);
+			static_cast<VTable*>(this->cloopVTable)->setDefaultBpb(this, status, parLength, par);
+			StatusType::checkException(status);
 		}
 	};
 
@@ -4146,6 +4155,7 @@ namespace Firebird
 		static const unsigned SPB_START = 3;
 		static const unsigned TPB = 4;
 		static const unsigned BATCH = 5;
+		static const unsigned BPB = 6;
 
 		template <typename StatusType> void clear(StatusType* status)
 		{
@@ -8964,6 +8974,7 @@ namespace Firebird
 					this->cancel = &Name::cloopcancelDispatcher;
 					this->getBlobAlignment = &Name::cloopgetBlobAlignmentDispatcher;
 					this->getMetadata = &Name::cloopgetMetadataDispatcher;
+					this->setDefaultBpb = &Name::cloopsetDefaultBpbDispatcher;
 				}
 			} vTable;
 
@@ -8984,13 +8995,13 @@ namespace Firebird
 			}
 		}
 
-		static void CLOOP_CARG cloopaddBlobDispatcher(IBatch* self, IStatus* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId) throw()
+		static void CLOOP_CARG cloopaddBlobDispatcher(IBatch* self, IStatus* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId, unsigned parLength, const unsigned char* par) throw()
 		{
 			StatusType status2(status);
 
 			try
 			{
-				static_cast<Name*>(self)->Name::addBlob(&status2, length, inBuffer, blobId);
+				static_cast<Name*>(self)->Name::addBlob(&status2, length, inBuffer, blobId, parLength, par);
 			}
 			catch (...)
 			{
@@ -9099,6 +9110,20 @@ namespace Firebird
 			}
 		}
 
+		static void CLOOP_CARG cloopsetDefaultBpbDispatcher(IBatch* self, IStatus* status, unsigned parLength, const unsigned char* par) throw()
+		{
+			StatusType status2(status);
+
+			try
+			{
+				static_cast<Name*>(self)->Name::setDefaultBpb(&status2, parLength, par);
+			}
+			catch (...)
+			{
+				StatusType::catchException(&status2);
+			}
+		}
+
 		static void CLOOP_CARG cloopaddRefDispatcher(IReferenceCounted* self) throw()
 		{
 			try
@@ -9139,7 +9164,7 @@ namespace Firebird
 		}
 
 		virtual void add(StatusType* status, unsigned count, const void* inBuffer) = 0;
-		virtual void addBlob(StatusType* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId) = 0;
+		virtual void addBlob(StatusType* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId, unsigned parLength, const unsigned char* par) = 0;
 		virtual void appendBlobData(StatusType* status, unsigned length, const void* inBuffer) = 0;
 		virtual void addBlobStream(StatusType* status, unsigned length, const void* inBuffer) = 0;
 		virtual void registerBlob(StatusType* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId) = 0;
@@ -9147,6 +9172,7 @@ namespace Firebird
 		virtual void cancel(StatusType* status) = 0;
 		virtual unsigned getBlobAlignment(StatusType* status) = 0;
 		virtual IMessageMetadata* getMetadata(StatusType* status) = 0;
+		virtual void setDefaultBpb(StatusType* status, unsigned parLength, const unsigned char* par) = 0;
 	};
 
 	template <typename Name, typename StatusType, typename Base>

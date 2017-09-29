@@ -42,6 +42,8 @@
 #include "../common/StatusHolder.h"
 #include "../common/classes/stack.h"
 #include "../common/classes/BatchCompletionState.h"
+#include "../common/isBpbSegmented.h"
+#include "../dsql/DsqlBatch.h"
 
 using namespace Firebird;
 
@@ -115,6 +117,8 @@ static bool_t xdr_sql_blr(XDR*, SLONG, CSTRING*, bool, SQL_STMT_TYPE);
 static bool_t xdr_sql_message(XDR*, SLONG);
 static bool_t xdr_trrq_blr(XDR*, CSTRING*);
 static bool_t xdr_trrq_message(XDR*, USHORT);
+static Rsr* getStatement(XDR*, USHORT);
+
 
 #include "../common/xdr_proto.h"
 
@@ -1064,8 +1068,31 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			P_BATCH_BLOB* b = &p->p_batch_blob;
 			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
 			if (p->p_operation == op_batch_blob)
+			{
 				MAP(xdr_quad, b->p_batch_blob_id);
+				MAP(xdr_cstring_const, b->p_batch_blob_bpb);
+
+				// Now it's time to analyze BPB and set appropriate flag in batch
+				Rsr* statement = getStatement(xdrs, b->p_batch_statement);
+				ULONG& flags(statement->rsr_batch_flags);
+				bool isSegmented = b->p_batch_blob_bpb.cstr_length ?
+					fb_utils::isBpbSegmented(b->p_batch_blob_bpb.cstr_length, b->p_batch_blob_bpb.cstr_address) :
+					flags & (1 << Jrd::DsqlBatch::FLAG_DEFAULT_SEGMENTED);
+				if (isSegmented)
+					flags |= (1 << Jrd::DsqlBatch::FLAG_CURRENT_SEGMENTED);
+				else
+					flags &= ~(1 << Jrd::DsqlBatch::FLAG_CURRENT_SEGMENTED);
+			}
 			MAP(xdr_cstring, b->p_batch_blob_data);
+
+			return P_TRUE(xdrs, p);
+		}
+
+	case op_batch_set_bpb:
+		{
+			P_BATCH_SETBPB* b = &p->p_batch_setbpb;
+			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
+			MAP(xdr_cstring_const, b->p_batch_blob_bpb);
 
 			return P_TRUE(xdrs, p);
 		}
@@ -1084,38 +1111,14 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 		{
 			P_BATCH_BLOB* b = &p->p_batch_blob;
 			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
-
 			if (xdrs->x_op == XDR_FREE)
 			{
 				MAP(xdr_cstring, b->p_batch_blob_data);
 				return P_TRUE(xdrs, p);
 			}
-
 			MAP(xdr_u_long, b->p_batch_blob_data.cstr_length);
 
-			rem_port* port = (rem_port*) xdrs->x_public;
-			SSHORT statement_id = b->p_batch_statement;
-			Rsr* statement;
-
-			if (statement_id >= 0)
-			{
-				if (static_cast<ULONG>(statement_id) >= port->port_objects.getCount())
-					return P_FALSE(xdrs, p);
-
-				try
-				{
-					statement = port->port_objects[statement_id];
-				}
-				catch (const status_exception&)
-				{
-					return P_FALSE(xdrs, p);
-				}
-			}
-			else
-			{
-				statement = port->port_statement;
-			}
-
+			Rsr* statement = getStatement(xdrs, b->p_batch_statement);
 			if (!statement)
 				return P_FALSE(xdrs, p);
 
@@ -2268,4 +2271,26 @@ static void reset_statement( XDR* xdrs, SSHORT statement_id)
 		catch (const status_exception&)
 		{} // no-op
 	}
+}
+
+static Rsr* getStatement(XDR* xdrs, USHORT statement_id)
+{
+	rem_port* port = (rem_port*) xdrs->x_public;
+
+	if (statement_id >= 0)
+	{
+		if (statement_id >= port->port_objects.getCount())
+			return nullptr;
+
+		try
+		{
+			return port->port_objects[statement_id];
+		}
+		catch (const status_exception&)
+		{
+			return nullptr;
+		}
+	}
+
+	return port->port_statement;
 }

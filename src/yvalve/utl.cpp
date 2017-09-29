@@ -761,8 +761,12 @@ public:
 			k = ClumpletReader::WideTagged;
 			tag = IBatch::VERSION1;
 			break;
+		case BPB:
+			k = ClumpletReader::Tagged;
+			tag = isc_bpb_version1;
+			break;
 		default:
-			fatal_exception::raiseFmt("Wrong parameters block kind %d, should be from %d to %d", kind, DPB, BATCH);
+			fatal_exception::raiseFmt("Wrong parameters block kind %d, should be from %d to %d", kind, DPB, BPB);
 			break;
 		}
 

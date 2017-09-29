@@ -4831,13 +4831,14 @@ void YBatch::add(CheckStatusWrapper* status, unsigned count, const void* inBuffe
 }
 
 
-void YBatch::addBlob(CheckStatusWrapper* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId)
+void YBatch::addBlob(CheckStatusWrapper* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId,
+	unsigned parLength, const unsigned char* par)
 {
 	try
 	{
 		YEntry<YBatch> entry(status, this);
 
-		entry.next()->addBlob(status, length, inBuffer, blobId);
+		entry.next()->addBlob(status, length, inBuffer, blobId, parLength, par);
 	}
 	catch (const Exception& e)
 	{
@@ -4890,6 +4891,21 @@ unsigned YBatch::getBlobAlignment(CheckStatusWrapper* status)
 	}
 
 	return 0;
+}
+
+
+void YBatch::setDefaultBpb(CheckStatusWrapper* status, unsigned parLength, const unsigned char* par)
+{
+	try
+	{
+		YEntry<YBatch> entry(status, this);
+
+		entry.next()->setDefaultBpb(status, parLength, par);
+	}
+	catch (const Exception& e)
+	{
+		e.stuffException(status);
+	}
 }
 
 

@@ -64,14 +64,14 @@
 #include "firebird/Interface.h"
 #include "../common/StatementMetadata.h"
 #include "../common/IntlParametersBlock.h"
+#include "../common/isBpbSegmented.h"
 
 #include "../auth/SecurityDatabase/LegacyClient.h"
 #include "../auth/SecureRemotePassword/client/SrpClient.h"
 #include "../auth/trusted/AuthSspi.h"
 #include "../plugins/crypt/arc4/Arc4.h"
-
 #include "BlrFromMessage.h"
-
+#include "../dsql/DsqlBatch.h"
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -306,13 +306,15 @@ public:
 	// IResultSet implementation
 	int release();
 	void add(Firebird::CheckStatusWrapper* status, unsigned count, const void* inBuffer);
-	void addBlob(Firebird::CheckStatusWrapper* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId);
+	void addBlob(Firebird::CheckStatusWrapper* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId,
+		unsigned parLength, const unsigned char* par);
 	void appendBlobData(Firebird::CheckStatusWrapper* status, unsigned length, const void* inBuffer);
 	void addBlobStream(Firebird::CheckStatusWrapper* status, unsigned length, const void* inBuffer);
 	void registerBlob(Firebird::CheckStatusWrapper* status, const ISC_QUAD* existingBlob, ISC_QUAD* blobId);
 	Firebird::IBatchCompletionState* execute(Firebird::CheckStatusWrapper* status, Firebird::ITransaction* transaction);
 	void cancel(Firebird::CheckStatusWrapper* status);
 	unsigned getBlobAlignment(Firebird::CheckStatusWrapper* status);
+	void setDefaultBpb(Firebird::CheckStatusWrapper* status, unsigned parLength, const unsigned char* par);
 	Firebird::IMessageMetadata* getMetadata(Firebird::CheckStatusWrapper* status);
 
 	Batch(Statement* s, IMessageMetadata* inFmt, unsigned parLength, const unsigned char* par)
@@ -2149,12 +2151,12 @@ void Batch::add(CheckStatusWrapper* status, unsigned count, const void* inBuffer
 }
 
 
-void Batch::addBlob(CheckStatusWrapper* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId)
+void Batch::addBlob(CheckStatusWrapper* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId,
+	unsigned parLength, const unsigned char* par)
 {
 	try
 	{
 		// Check and validate handles, etc.
-
 		if (!stmt)
 		{
 			Arg::Gds(isc_bad_req_handle).raise();
@@ -2167,9 +2169,11 @@ void Batch::addBlob(CheckStatusWrapper* status, unsigned length, const void* inB
 		rem_port* port = rdb->rdb_port;
 		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
 
+		// Decide on blob ID
 		if (blobPolicy == IBatch::BLOB_IDS_ENGINE)
 			genBlobId(blobId);
 
+		// Prepare packet ...
 		PACKET* packet = &rdb->rdb_packet;
 		packet->p_operation = op_batch_blob;
 		P_BATCH_BLOB* batch = &packet->p_batch_blob;
@@ -2177,7 +2181,10 @@ void Batch::addBlob(CheckStatusWrapper* status, unsigned length, const void* inB
 		batch->p_batch_blob_id = *blobId;
 		batch->p_batch_blob_data.cstr_address = (UCHAR*) inBuffer;
 		batch->p_batch_blob_data.cstr_length = length;
+		batch->p_batch_blob_bpb.cstr_address = par;
+		batch->p_batch_blob_bpb.cstr_length = parLength;
 
+		// ... and send it
 		send_partial_packet(port, packet);
 		defer_packet(port, packet, true);
 	}
@@ -2252,6 +2259,43 @@ void Batch::addBlobStream(CheckStatusWrapper* status, unsigned length, const voi
 		batch->p_batch_statement = statement->rsr_id;
 		batch->p_batch_blob_data.cstr_address = (UCHAR*) inBuffer;
 		batch->p_batch_blob_data.cstr_length = length;
+
+		send_partial_packet(port, packet);
+		defer_packet(port, packet, true);
+	}
+	catch (const Exception& ex)
+	{
+		ex.stuffException(status);
+	}
+}
+
+
+void Batch::setDefaultBpb(CheckStatusWrapper* status, unsigned parLength, const unsigned char* par)
+{
+	try
+	{
+		// Check and validate handles, etc.
+
+		if (!stmt)
+		{
+			Arg::Gds(isc_bad_req_handle).raise();
+		}
+
+		Rsr* statement = stmt->getStatement();
+		CHECK_HANDLE(statement, isc_bad_req_handle);
+		Rdb* rdb = statement->rsr_rdb;
+		CHECK_HANDLE(rdb, isc_bad_db_handle);
+		rem_port* port = rdb->rdb_port;
+		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
+
+		// Prepare and send the packet
+
+		PACKET* packet = &rdb->rdb_packet;
+		packet->p_operation = op_batch_set_bpb;
+		P_BATCH_SETBPB* batch = &packet->p_batch_setbpb;
+		batch->p_batch_statement = statement->rsr_id;
+		batch->p_batch_blob_bpb.cstr_address = par;
+		batch->p_batch_blob_bpb.cstr_length = parLength;
 
 		send_partial_packet(port, packet);
 		defer_packet(port, packet, true);

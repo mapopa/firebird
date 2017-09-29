@@ -5604,7 +5604,8 @@ void JBatch::add(CheckStatusWrapper* status, unsigned count, const void* inBuffe
 }
 
 
-void JBatch::addBlob(CheckStatusWrapper* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId)
+void JBatch::addBlob(CheckStatusWrapper* status, unsigned length, const void* inBuffer, ISC_QUAD* blobId,
+	unsigned parLength, const unsigned char* par)
 {
 	try
 	{
@@ -5614,7 +5615,7 @@ void JBatch::addBlob(CheckStatusWrapper* status, unsigned length, const void* in
 		try
 		{
 			DsqlBatch* b = getHandle();
-			b->addBlob(tdbb, length, inBuffer, blobId);
+			b->addBlob(tdbb, length, inBuffer, blobId, parLength, par);
 		}
 		catch (const Exception& ex)
 		{
@@ -5683,6 +5684,36 @@ void JBatch::addBlobStream(CheckStatusWrapper* status, unsigned length, const vo
 		}
 
 		trace_warning(tdbb, status, "JBatch::addBlobStream");
+	}
+	catch (const Exception& ex)
+	{
+		ex.stuffException(status);
+		return;
+	}
+
+	successful_completion(status);
+}
+
+
+void JBatch::setDefaultBpb(CheckStatusWrapper* status, unsigned parLength, const unsigned char* par)
+{
+	try
+	{
+		EngineContextHolder tdbb(status, this, FB_FUNCTION);
+		check_database(tdbb);
+
+		try
+		{
+			DsqlBatch* b = getHandle();
+			b->setDefaultBpb(tdbb, parLength, par);
+		}
+		catch (const Exception& ex)
+		{
+			transliterateException(tdbb, ex, status, "JBatch::setDefaultBpb");
+			return;
+		}
+
+		trace_warning(tdbb, status, "JBatch::setDefaultBpb");
 	}
 	catch (const Exception& ex)
 	{

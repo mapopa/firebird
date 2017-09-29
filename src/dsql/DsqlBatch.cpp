@@ -35,13 +35,14 @@
 #include "../common/classes/fb_string.h"
 #include "../common/utils_proto.h"
 #include "../common/classes/BatchCompletionState.h"
+#include "../common/isBpbSegmented.h"
 
 using namespace Firebird;
 using namespace Jrd;
 
 namespace {
 	const char* const TEMP_NAME = "fb_batch";
-	const UCHAR blobParameters[] = {isc_bpb_version1, isc_bpb_type, 1, isc_bpb_type_stream};
+	const UCHAR initBlobParameters[] = {isc_bpb_version1, isc_bpb_type, 1, isc_bpb_type_stream};
 
 	class JTransliterate : public Firebird::Transliterate
 	{
@@ -68,6 +69,7 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 	  m_blobs(m_request->getPool()),
 	  m_blobMap(m_request->getPool()),
 	  m_blobMeta(m_request->getPool()),
+	  m_defaultBpb(m_request->getPool()),
 	  m_messageSize(0),
 	  m_alignedMessage(0),
 	  m_alignment(0),
@@ -100,10 +102,7 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 		{
 		case IBatch::TAG_MULTIERROR:
 		case IBatch::TAG_RECORD_COUNTS:
-			if (pb.getInt())
-				m_flags |= (1 << t);
-			else
-				m_flags &= ~(1 << t);
+			setFlag(t, pb.getInt());
 			break;
 
 		case IBatch::TAG_BLOB_IDS:
@@ -165,6 +164,9 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 	m_messages.setBuf(m_bufferSize);
 	if (m_blobMeta.hasData())
 		m_blobs.setBuf(m_bufferSize);
+
+	// assign initial default BPB
+	setDefBpb(FB_NELEM(initBlobParameters), initBlobParameters);
 }
 
 
@@ -322,7 +324,25 @@ void DsqlBatch::blobPrepare()
 	m_blobs.align(BLOB_STREAM_ALIGN);
 }
 
-void DsqlBatch::addBlob(thread_db* tdbb, ULONG length, const void* inBuffer, ISC_QUAD* blobId)
+void DsqlBatch::setDefaultBpb(thread_db* tdbb, unsigned parLength, const unsigned char* par)
+{
+	if (m_blobs.getSize())
+	{
+		ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
+			Arg::Gds(isc_random) << "setDefaultBpb() call can be used only with empty batch (no blobs added)");
+	}
+	setDefBpb(parLength, par);
+}
+
+void DsqlBatch::setDefBpb(unsigned parLength, const unsigned char* par)
+{
+	m_defaultBpb.clear();
+	m_defaultBpb.add(par, parLength);
+	setFlag(FLAG_DEFAULT_SEGMENTED, fb_utils::isBpbSegmented(m_defaultBpb.getCount(), m_defaultBpb.begin()));
+}
+
+void DsqlBatch::addBlob(thread_db* tdbb, ULONG length, const void* inBuffer, ISC_QUAD* blobId,
+	unsigned parLength, const unsigned char* par)
 {
 	blobCheckMode(false, "addBlob");
 	blobPrepare();
@@ -335,12 +355,21 @@ void DsqlBatch::addBlob(thread_db* tdbb, ULONG length, const void* inBuffer, ISC
 	if (m_blobPolicy == IBatch::BLOB_IDS_ENGINE)
 		genBlobId(blobId);
 
+	// Determine type of current blob
+	setFlag(FLAG_CURRENT_SEGMENTED, parLength ? fb_utils::isBpbSegmented(parLength, par) : m_flags & (1 << FLAG_DEFAULT_SEGMENTED));
+
 	// Store header
 	m_blobs.put(blobId, sizeof(ISC_QUAD));
-	m_blobs.put(&length, sizeof(ULONG));
+	ULONG fullLength = length + parLength;
+	m_blobs.put(&fullLength, sizeof(ULONG));
+	m_blobs.put(&parLength, sizeof(ULONG));
+
+	// Store BPB
+	if (parLength)
+		m_blobs.put(par, parLength);
 
 	// Finally store user data
-	m_blobs.put(inBuffer, length);
+	putSegment(length, inBuffer);
 }
 
 void DsqlBatch::appendBlobData(thread_db* tdbb, ULONG length, const void* inBuffer)
@@ -355,6 +384,23 @@ void DsqlBatch::appendBlobData(thread_db* tdbb, ULONG length, const void* inBuff
 	}
 
 	m_setBlobSize = true;
+	putSegment(length, inBuffer);
+}
+
+void DsqlBatch::putSegment(ULONG length, const void* inBuffer)
+{
+	if (m_flags & (1 << FLAG_CURRENT_SEGMENTED))
+	{
+		if (length > MAX_USHORT)
+		{
+			ERR_post(Arg::Gds(isc_imp_exc) << Arg::Gds(isc_blobtoobig) <<
+					 Arg::Gds(isc_random) << "Segment size >= 64Kb");
+		}
+		USHORT l = length;
+		m_blobs.align(IBatch::BLOB_SEGHDR_ALIGN);
+		m_blobs.put(&l, sizeof(l));
+		m_setBlobSize = true;
+	}
 	m_blobs.put(inBuffer, length);
 }
 
@@ -435,66 +481,157 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 				  Arg::Gds(isc_random) << "Internal BLOB buffer overflow - batch too big");
 		}
 
-		ULONG remains;
-		UCHAR* data;
-		ULONG currentBlobSize = 0;
-		ULONG byteCount = 0;
+		struct BlobFlow
+		{
+			ULONG remains;
+			UCHAR* data;
+			ULONG currentBlobSize = 0;
+			ULONG byteCount = 0;
+
+			BlobFlow()
+				: remains(0), data(NULL), currentBlobSize(0), byteCount(0)
+			{ }
+
+			void newHdr(ULONG blobSize)
+			{
+				currentBlobSize = blobSize;
+				move3(SIZEOF_BLOB_HEAD);
+			}
+
+			void move(ULONG step)
+			{
+				move3(step);
+				currentBlobSize -= step;
+			}
+
+			bool align(ULONG alignment)
+			{
+				ULONG a = byteCount % alignment;
+				if (a)
+				{
+					a = alignment - a;
+					move3(a);
+					if (currentBlobSize)
+						currentBlobSize -= a;
+				}
+				return a;
+			}
+
+private:
+			void move3(ULONG step)
+			{
+				data += step;
+				byteCount += step;
+				remains -= step;
+			}
+		};
+		BlobFlow flow;
 		blb* blob = nullptr;
 		try
 		{
-			while ((remains = m_blobs.get(&data)) > 0)
+			while ((flow.remains = m_blobs.get(&flow.data)) > 0)
 			{
-				while (remains)
+				while (flow.remains)
 				{
 					// should we get next blob header
-					if (!currentBlobSize)
+					if (!flow.currentBlobSize)
 					{
-						// skip alignment data
-						ULONG align = byteCount % BLOB_STREAM_ALIGN;
-						if (align)
-						{
-							align = BLOB_STREAM_ALIGN - align;
-							data += align;
-							byteCount += align;
-							remains -= align;
+						// align data stream
+						if (flow.align(BLOB_STREAM_ALIGN))
 							continue;
-						}
 
-						// safety check
-						if (remains < SIZEOF_BLOB_HEAD)
+						// check for partial header in the buffer
+						if (flow.remains < SIZEOF_BLOB_HEAD)
+							flow.remains = m_blobs.reget(flow.remains, &flow.data, BLOB_STREAM_ALIGN);
+						if (flow.remains < SIZEOF_BLOB_HEAD)
 						{
 							ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
-								Arg::Gds(isc_random) << "Internal error: useless data remained in batch BLOB buffer");
+								Arg::Gds(isc_random) << "Blob buffer format error: useless data remained in buffer");
 						}
 
 						// parse blob header
-						fb_assert(intptr_t(data) % BLOB_STREAM_ALIGN == 0);
-						ISC_QUAD* batchBlobId = reinterpret_cast<ISC_QUAD*>(data);
-						ULONG* blobSize = reinterpret_cast<ULONG*>(data + sizeof(ISC_QUAD));
-						currentBlobSize = *blobSize;
-						data += SIZEOF_BLOB_HEAD;
-						byteCount += SIZEOF_BLOB_HEAD;
-						remains -= SIZEOF_BLOB_HEAD;
+						fb_assert(intptr_t(flow.data) % BLOB_STREAM_ALIGN == 0);
+						ISC_QUAD* batchBlobId = reinterpret_cast<ISC_QUAD*>(flow.data);
+						ULONG* blobSize = reinterpret_cast<ULONG*>(flow.data + sizeof(ISC_QUAD));
+						ULONG* bpbSize = reinterpret_cast<ULONG*>(flow.data + sizeof(ISC_QUAD) + sizeof(ULONG));
+						flow.newHdr(*blobSize);
+						ULONG currentBpbSize = *bpbSize;
+
+						// get BPB
+						Bpb localBpb;
+						Bpb* bpb;
+						bool segmentedMode;
+						if (currentBpbSize)
+						{
+							if (currentBpbSize > flow.remains)
+								flow.remains = m_blobs.reget(flow.remains, &flow.data, BLOB_STREAM_ALIGN);
+							if (currentBpbSize > flow.remains)
+							{
+								ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
+									Arg::Gds(isc_random) << "Blob buffer format error: size of BPB greater than remaining data");	// <<currentBpbSize
+							}
+							localBpb.add(flow.data, currentBpbSize);
+							bpb = &localBpb;
+							segmentedMode = fb_utils::isBpbSegmented(currentBpbSize, flow.data);
+							flow.move(currentBpbSize);
+						}
+						else
+						{
+							bpb = &m_defaultBpb;
+							segmentedMode = m_flags & (1 << FLAG_DEFAULT_SEGMENTED);
+						}
+						setFlag(FLAG_CURRENT_SEGMENTED, segmentedMode);
 
 						// create blob
 						bid engineBlobId;
-						blob = blb::create2(tdbb, transaction, &engineBlobId, sizeof(blobParameters), blobParameters, true);
+						blob = blb::create2(tdbb, transaction, &engineBlobId, bpb->getCount(),
+							bpb->begin(), true);
 						registerBlob(reinterpret_cast<ISC_QUAD*>(&engineBlobId), batchBlobId);
 					}
 
 					// store data
-					ULONG dataSize = currentBlobSize;
-					if (dataSize > remains)
-						dataSize = remains;
-					blob->BLB_put_segment(tdbb, data, dataSize);
+					ULONG dataSize = MIN(flow.currentBlobSize, flow.remains);
+					if (dataSize)
+					{
+						if (m_flags & (1 << FLAG_CURRENT_SEGMENTED))
+						{
+							if (flow.align(IBatch::BLOB_SEGHDR_ALIGN))
+								continue;
+							if (dataSize < sizeof(USHORT))
+							{
+								flow.remains = m_blobs.reget(flow.remains, &flow.data, BLOB_STREAM_ALIGN);
+								dataSize = MIN(flow.currentBlobSize, flow.remains);
+								if (dataSize < sizeof(USHORT))
+								{
+									ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
+										Arg::Gds(isc_random) << "Blob buffer format error: size of segment header exceeds remaining data");	// <<dataSize
+								}
+							}
+							USHORT* segSize = reinterpret_cast<USHORT*>(flow.data);
+							flow.move(sizeof(USHORT));
 
-					// account data portion
-					data += dataSize;
-					byteCount += dataSize;
-					remains -= dataSize;
-					currentBlobSize -= dataSize;
+							dataSize = *segSize;
+							if (dataSize > flow.currentBlobSize)
+							{
+								ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
+									Arg::Gds(isc_random) << "Blob buffer format error: size of segment exceeds remaining data");	// <<dataSize, currentBlobSize
+							}
+							if (dataSize > flow.remains)
+							{
+								flow.remains = m_blobs.reget(flow.remains, &flow.data, BLOB_STREAM_ALIGN);
+								if (dataSize > flow.remains)
+								{
+									ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
+										Arg::Gds(isc_random) << "Blob buffer format error: size of segment exceeds RAM buffer");	// <<dataSize, flow.remains
+								}
+							}
+						}
 
-					if (!currentBlobSize)
+						blob->BLB_put_segment(tdbb, flow.data, dataSize);
+						flow.move(dataSize);
+					}
+
+					if (blob && !flow.currentBlobSize)
 					{
 						blob->BLB_close(tdbb);
 						blob = nullptr;
@@ -788,6 +925,23 @@ ULONG DsqlBatch::DataCache::get(UCHAR** buffer)
 	return 0;
 }
 
+ULONG DsqlBatch::DataCache::reget(ULONG remains, UCHAR** buffer, ULONG alignment)
+{
+	ULONG a = remains % alignment;
+	if (a)
+	{
+		a = alignment - a;
+		remains += a;
+	}
+	fb_assert(remains < m_cache->getCount());
+
+	m_cache->removeCount(0, m_cache->getCount() - remains);
+	ULONG size = get(buffer);
+	size -= a;
+	*buffer += a;
+	return size;
+}
+
 void DsqlBatch::DataCache::remained(ULONG size, ULONG alignment)
 {
 	if (size > alignment)
@@ -811,7 +965,9 @@ void DsqlBatch::DataCache::remained(ULONG size, ULONG alignment)
 
 ULONG DsqlBatch::DataCache::getSize() const
 {
-	fb_assert(m_cache);
+	if(!m_cache)
+		return 0;
+
 	fb_assert((MAX_ULONG - 1) - m_used > m_cache->getCount());
 	return m_used + m_cache->getCount();
 }
