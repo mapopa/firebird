@@ -249,17 +249,15 @@ string ExprNode::internalPrint(NodePrinter& printer) const
 }
 
 
-bool ExprNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool ExprNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
 	if (other->type != type)
 		return false;
 
-	thread_db* tdbb = JRD_get_thread_data();	//// FIXME:
-
-	NodeRefsHolder thisHolder(*tdbb->getDefaultPool());
+	NodeRefsHolder thisHolder(dsqlScratch->getPool());
 	getChildren(thisHolder, true);
 
-	NodeRefsHolder otherHolder(*tdbb->getDefaultPool());
+	NodeRefsHolder otherHolder(dsqlScratch->getPool());
 	other->getChildren(otherHolder, true);
 
 	size_t count = thisHolder.refs.getCount();
@@ -270,7 +268,7 @@ bool ExprNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 
 	for (const auto& i : thisHolder.refs)
 	{
-		if (!*i != !**j || !PASS1_node_match(i->getExpr(), (*j)->getExpr(), ignoreMapCast))
+		if (!*i != !**j || !PASS1_node_match(dsqlScratch, i->getExpr(), (*j)->getExpr(), ignoreMapCast))
 			return false;
 
 		++j;
@@ -279,17 +277,15 @@ bool ExprNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 	return true;
 }
 
-bool ExprNode::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool ExprNode::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
 	if (other->type != type)
 		return false;
 
-	thread_db* tdbb = JRD_get_thread_data();	//// FIXME:
-
-	NodeRefsHolder thisHolder(*tdbb->getDefaultPool());
+	NodeRefsHolder thisHolder(csb->csb_pool);
 	getChildren(thisHolder, false);
 
-	NodeRefsHolder otherHolder(*tdbb->getDefaultPool());
+	NodeRefsHolder otherHolder(csb->csb_pool);
 	other->getChildren(otherHolder, false);
 
 	size_t count = thisHolder.refs.getCount();
@@ -303,13 +299,53 @@ bool ExprNode::sameAs(const ExprNode* other, bool ignoreStreams) const
 		if (!*i && !**j)
 			continue;
 
-		if (!*i || !**j || !i->getExpr()->sameAs((*j)->getExpr(), ignoreStreams))
+		if (!*i || !**j || !i->getExpr()->sameAs(csb, (*j)->getExpr(), ignoreStreams))
 			return false;
 
 		++j;
 	}
 
 	return true;
+}
+
+bool ExprNode::possiblyUnknown(OptimizerBlk* opt)
+{
+	NodeRefsHolder holder(opt->getPool());
+	getChildren(holder, false);
+
+	for (NodeRef** i = holder.refs.begin(); i != holder.refs.end(); ++i)
+	{
+		if (**i && (*i)->getExpr()->possiblyUnknown(opt))
+			return true;
+	}
+
+	return false;
+}
+
+bool ExprNode::unmappable(CompilerScratch* csb, const MapNode* mapNode, StreamType shellStream)
+{
+	NodeRefsHolder holder(csb->csb_pool);
+	getChildren(holder, false);
+
+	for (NodeRef** i = holder.refs.begin(); i != holder.refs.end(); ++i)
+	{
+		if (**i && !(*i)->getExpr()->unmappable(csb, mapNode, shellStream))
+			return false;
+	}
+
+	return true;
+}
+
+void ExprNode::collectStreams(CompilerScratch* csb, SortedStreamList& streamList) const
+{
+	NodeRefsHolder holder(csb->csb_pool);
+	getChildren(holder, false);
+
+	for (const NodeRef* const* i = holder.refs.begin(); i != holder.refs.end(); ++i)
+	{
+		if (**i)
+			(*i)->getExpr()->collectStreams(csb, streamList);
+	}
 }
 
 bool ExprNode::computable(CompilerScratch* csb, StreamType stream,
@@ -1606,9 +1642,9 @@ ValueExprNode* ArithmeticNode::copy(thread_db* tdbb, NodeCopier& copier) const
 	return node;
 }
 
-bool ArithmeticNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool ArithmeticNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
-	if (!ExprNode::dsqlMatch(other, ignoreMapCast))
+	if (!ExprNode::dsqlMatch(dsqlScratch, other, ignoreMapCast))
 		return false;
 
 	const ArithmeticNode* o = nodeAs<ArithmeticNode>(other);
@@ -1617,15 +1653,15 @@ bool ArithmeticNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 	return dialect1 == o->dialect1 && blrOp == o->blrOp;
 }
 
-bool ArithmeticNode::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool ArithmeticNode::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
 	const ArithmeticNode* const otherNode = nodeAs<ArithmeticNode>(other);
 
 	if (!otherNode || blrOp != otherNode->blrOp || dialect1 != otherNode->dialect1)
 		return false;
 
-	if (arg1->sameAs(otherNode->arg1, ignoreStreams) &&
-		arg2->sameAs(otherNode->arg2, ignoreStreams))
+	if (arg1->sameAs(csb, otherNode->arg1, ignoreStreams) &&
+		arg2->sameAs(csb, otherNode->arg2, ignoreStreams))
 	{
 		return true;
 	}
@@ -1635,8 +1671,8 @@ bool ArithmeticNode::sameAs(const ExprNode* other, bool ignoreStreams) const
 		// A + B is equivalent to B + A, ditto for A * B and B * A.
 		// Note: If one expression is A + B + C, but the other is B + C + A we won't
 		// necessarily match them.
-		if (arg1->sameAs(otherNode->arg2, ignoreStreams) &&
-			arg2->sameAs(otherNode->arg1, ignoreStreams))
+		if (arg1->sameAs(csb, otherNode->arg2, ignoreStreams) &&
+			arg2->sameAs(csb, otherNode->arg1, ignoreStreams))
 		{
 			return true;
 		}
@@ -2978,9 +3014,9 @@ ValueExprNode* CastNode::copy(thread_db* tdbb, NodeCopier& copier) const
 	return node;
 }
 
-bool CastNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool CastNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
-	if (!ExprNode::dsqlMatch(other, ignoreMapCast))
+	if (!ExprNode::dsqlMatch(dsqlScratch, other, ignoreMapCast))
 		return false;
 
 	const CastNode* o = nodeAs<CastNode>(other);
@@ -2989,9 +3025,9 @@ bool CastNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 	return dsqlField == o->dsqlField;
 }
 
-bool CastNode::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool CastNode::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
-	if (!ExprNode::sameAs(other, ignoreStreams))
+	if (!ExprNode::sameAs(csb, other, ignoreStreams))
 		return false;
 
 	const CastNode* const otherNode = nodeAs<CastNode>(other);
@@ -4446,9 +4482,9 @@ void DefaultNode::make(DsqlCompilerScratch* /*dsqlScratch*/, dsc* /*desc*/)
 {
 }
 
-bool DefaultNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool DefaultNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
-	if (!ExprNode::dsqlMatch(other, ignoreMapCast))
+	if (!ExprNode::dsqlMatch(dsqlScratch, other, ignoreMapCast))
 		return false;
 
 	const DefaultNode* o = nodeAs<DefaultNode>(other);
@@ -4488,9 +4524,9 @@ DmlNode* DerivedExprNode::parse(thread_db* tdbb, MemoryPool& pool, CompilerScrat
 	return node;
 }
 
-void DerivedExprNode::collectStreams(SortedStreamList& streamList) const
+void DerivedExprNode::collectStreams(CompilerScratch* csb, SortedStreamList& streamList) const
 {
-	arg->collectStreams(streamList);
+	arg->collectStreams(csb, streamList);
 
 	for (const auto i : internalStreamList)
 	{
@@ -4506,7 +4542,7 @@ bool DerivedExprNode::computable(CompilerScratch* csb, StreamType stream,
 		return false;
 
 	SortedStreamList argStreams;
-	arg->collectStreams(argStreams);
+	arg->collectStreams(csb, argStreams);
 
 	for (const auto n : internalStreamList)
 	{
@@ -4866,9 +4902,9 @@ ValueExprNode* ExtractNode::copy(thread_db* tdbb, NodeCopier& copier) const
 	return node;
 }
 
-bool ExtractNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool ExtractNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
-	if (!ExprNode::dsqlMatch(other, ignoreMapCast))
+	if (!ExprNode::dsqlMatch(dsqlScratch, other, ignoreMapCast))
 		return false;
 
 	const ExtractNode* o = nodeAs<ExtractNode>(other);
@@ -4877,9 +4913,9 @@ bool ExtractNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 	return blrSubOp == o->blrSubOp;
 }
 
-bool ExtractNode::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool ExtractNode::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
-	if (!ExprNode::sameAs(other, ignoreStreams))
+	if (!ExprNode::sameAs(csb, other, ignoreStreams))
 		return false;
 
 	const ExtractNode* const otherNode = nodeAs<ExtractNode>(other);
@@ -5809,9 +5845,9 @@ void FieldNode::make(DsqlCompilerScratch* /*dsqlScratch*/, dsc* desc)
 	}
 }
 
-bool FieldNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool FieldNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
-	if (!ExprNode::dsqlMatch(other, ignoreMapCast))
+	if (!ExprNode::dsqlMatch(dsqlScratch, other, ignoreMapCast))
 		return false;
 
 	const FieldNode* o = nodeAs<FieldNode>(other);
@@ -5821,14 +5857,14 @@ bool FieldNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 		return false;
 
 	if (dsqlIndices || o->dsqlIndices)
-		return PASS1_node_match(dsqlIndices, o->dsqlIndices, ignoreMapCast);
+		return PASS1_node_match(dsqlScratch, dsqlIndices, o->dsqlIndices, ignoreMapCast);
 
 	return true;
 }
 
-bool FieldNode::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool FieldNode::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
-	if (!ExprNode::sameAs(other, ignoreStreams))
+	if (!ExprNode::sameAs(csb, other, ignoreStreams))
 		return false;
 
 	const FieldNode* const otherNode = nodeAs<FieldNode>(other);
@@ -6100,7 +6136,7 @@ ValueExprNode* FieldNode::pass1(thread_db* tdbb, CompilerScratch* csb)
 		// ASF: If the view field doesn't reference any of the view streams,
 		// evaluate it based on the view dbkey - CORE-1245.
 		SortedStreamList streams;
-		sub->collectStreams(streams);
+		sub->collectStreams(csb, streams);
 
 		bool view_refs = false;
 		for (FB_SIZE_T i = 0; i < streams.getCount(); i++)
@@ -6366,9 +6402,9 @@ ValueExprNode* GenIdNode::copy(thread_db* tdbb, NodeCopier& copier) const
 	return node;
 }
 
-bool GenIdNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool GenIdNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
-	if (!ExprNode::dsqlMatch(other, ignoreMapCast))
+	if (!ExprNode::dsqlMatch(dsqlScratch, other, ignoreMapCast))
 		return false;
 
 	const GenIdNode* o = nodeAs<GenIdNode>(other);
@@ -6380,9 +6416,9 @@ bool GenIdNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 		implicit == o->implicit;
 }
 
-bool GenIdNode::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool GenIdNode::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
-	if (!ExprNode::sameAs(other, ignoreStreams))
+	if (!ExprNode::sameAs(csb, other, ignoreStreams))
 		return false;
 
 	const GenIdNode* const otherNode = nodeAs<GenIdNode>(other);
@@ -7134,9 +7170,9 @@ ValueExprNode* LiteralNode::copy(thread_db* tdbb, NodeCopier& /*copier*/) const
 	return node;
 }
 
-bool LiteralNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool LiteralNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
-	if (!ExprNode::dsqlMatch(other, ignoreMapCast))
+	if (!ExprNode::dsqlMatch(dsqlScratch, other, ignoreMapCast))
 		return false;
 
 	const LiteralNode* o = nodeAs<LiteralNode>(other);
@@ -7150,9 +7186,9 @@ bool LiteralNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 	return memcmp(litDesc.dsc_address, o->litDesc.dsc_address, len) == 0;
 }
 
-bool LiteralNode::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool LiteralNode::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
-	if (!ExprNode::sameAs(other, ignoreStreams))
+	if (!ExprNode::sameAs(csb, other, ignoreStreams))
 		return false;
 
 	const LiteralNode* const otherNode = nodeAs<LiteralNode>(other);
@@ -7419,10 +7455,10 @@ void DsqlMapNode::make(DsqlCompilerScratch* dsqlScratch, dsc* desc)
 		desc->setNullable(true);
 }
 
-bool DsqlMapNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool DsqlMapNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
 	const DsqlMapNode* o = nodeAs<DsqlMapNode>(other);
-	return o && PASS1_node_match(map->map_node, o->map->map_node, ignoreMapCast);
+	return o && PASS1_node_match(dsqlScratch, map->map_node, o->map->map_node, ignoreMapCast);
 }
 
 
@@ -7950,9 +7986,9 @@ OrderNode* OrderNode::dsqlPass(DsqlCompilerScratch* dsqlScratch)
 	return node;
 }
 
-bool OrderNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool OrderNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
-	if (!ExprNode::dsqlMatch(other, ignoreMapCast))
+	if (!ExprNode::dsqlMatch(dsqlScratch, other, ignoreMapCast))
 		return false;
 
 	const OrderNode* o = nodeAs<OrderNode>(other);
@@ -7964,9 +8000,9 @@ bool OrderNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 //--------------------
 
 
-bool WindowClause::Frame::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool WindowClause::Frame::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
-	if (!ExprNode::sameAs(other, ignoreStreams))
+	if (!ExprNode::sameAs(csb, other, ignoreStreams))
 		return false;
 
 	const Frame* const otherNode = nodeAs<Frame>(other);
@@ -7996,9 +8032,9 @@ WindowClause::Frame* WindowClause::Frame::copy(thread_db* tdbb, NodeCopier& copi
 
 //--------------------
 
-bool WindowClause::FrameExtent::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool WindowClause::FrameExtent::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
-	if (!ExprNode::sameAs(other, ignoreStreams))
+	if (!ExprNode::sameAs(csb, other, ignoreStreams))
 		return false;
 
 	const FrameExtent* const otherNode = nodeAs<FrameExtent>(other);
@@ -8600,7 +8636,7 @@ void ParameterNode::make(DsqlCompilerScratch* /*dsqlScratch*/, dsc* desc)
 		*desc = dsqlParameter->par_desc;
 }
 
-bool ParameterNode::dsqlMatch(const ExprNode* other, bool /*ignoreMapCast*/) const
+bool ParameterNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool /*ignoreMapCast*/) const
 {
 	const ParameterNode* o = nodeAs<ParameterNode>(other);
 
@@ -9040,9 +9076,9 @@ ValueExprNode* RecordKeyNode::copy(thread_db* tdbb, NodeCopier& copier) const
 	return node;
 }
 
-bool RecordKeyNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool RecordKeyNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
-	if (!ExprNode::dsqlMatch(other, ignoreMapCast))
+	if (!ExprNode::dsqlMatch(dsqlScratch, other, ignoreMapCast))
 		return false;
 
 	const RecordKeyNode* o = nodeAs<RecordKeyNode>(other);
@@ -9051,9 +9087,9 @@ bool RecordKeyNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 	return blrOp == o->blrOp;
 }
 
-bool RecordKeyNode::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool RecordKeyNode::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
-	if (!ExprNode::sameAs(other, ignoreStreams))
+	if (!ExprNode::sameAs(csb, other, ignoreStreams))
 		return false;
 
 	const RecordKeyNode* const otherNode = nodeAs<RecordKeyNode>(other);
@@ -9567,9 +9603,9 @@ ValueExprNode* StrCaseNode::copy(thread_db* tdbb, NodeCopier& copier) const
 	return node;
 }
 
-bool StrCaseNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool StrCaseNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
-	if (!ExprNode::dsqlMatch(other, ignoreMapCast))
+	if (!ExprNode::dsqlMatch(dsqlScratch, other, ignoreMapCast))
 		return false;
 
 	const StrCaseNode* o = nodeAs<StrCaseNode>(other);
@@ -9578,9 +9614,9 @@ bool StrCaseNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 	return blrOp == o->blrOp;
 }
 
-bool StrCaseNode::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool StrCaseNode::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
-	if (!ExprNode::sameAs(other, ignoreStreams))
+	if (!ExprNode::sameAs(csb, other, ignoreStreams))
 		return false;
 
 	const StrCaseNode* const otherNode = nodeAs<StrCaseNode>(other);
@@ -9782,9 +9818,9 @@ ValueExprNode* StrLenNode::copy(thread_db* tdbb, NodeCopier& copier) const
 	return node;
 }
 
-bool StrLenNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool StrLenNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
-	if (!ExprNode::dsqlMatch(other, ignoreMapCast))
+	if (!ExprNode::dsqlMatch(dsqlScratch, other, ignoreMapCast))
 		return false;
 
 	const StrLenNode* o = nodeAs<StrLenNode>(other);
@@ -9793,9 +9829,9 @@ bool StrLenNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 	return blrSubOp == o->blrSubOp;
 }
 
-bool StrLenNode::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool StrLenNode::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
-	if (!ExprNode::sameAs(other, ignoreStreams))
+	if (!ExprNode::sameAs(csb, other, ignoreStreams))
 		return false;
 
 	const StrLenNode* const otherNode = nodeAs<StrLenNode>(other);
@@ -10061,13 +10097,13 @@ ValueExprNode* SubQueryNode::dsqlFieldRemapper(FieldRemapper& visitor)
 	return this;
 }
 
-void SubQueryNode::collectStreams(SortedStreamList& streamList) const
+void SubQueryNode::collectStreams(CompilerScratch* csb, SortedStreamList& streamList) const
 {
 	if (rse)
-		rse->collectStreams(streamList);
+		rse->collectStreams(csb, streamList);
 
 	if (value1)
-		value1->collectStreams(streamList);
+		value1->collectStreams(csb, streamList);
 }
 
 bool SubQueryNode::computable(CompilerScratch* csb, StreamType stream,
@@ -10204,7 +10240,7 @@ ValueExprNode* SubQueryNode::copy(thread_db* tdbb, NodeCopier& copier) const
 	return node;
 }
 
-bool SubQueryNode::sameAs(const ExprNode* /*other*/, bool /*ignoreStreams*/) const
+bool SubQueryNode::sameAs(CompilerScratch* /*csb*/, const ExprNode* /*other*/, bool /*ignoreStreams*/) const
 {
 	return false;
 }
@@ -11120,9 +11156,9 @@ ValueExprNode* SysFuncCallNode::copy(thread_db* tdbb, NodeCopier& copier) const
 	return node;
 }
 
-bool SysFuncCallNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool SysFuncCallNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
-	if (!ExprNode::dsqlMatch(other, ignoreMapCast))
+	if (!ExprNode::dsqlMatch(dsqlScratch, other, ignoreMapCast))
 		return false;
 
 	const SysFuncCallNode* otherNode = nodeAs<SysFuncCallNode>(other);
@@ -11130,9 +11166,9 @@ bool SysFuncCallNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 	return name == otherNode->name;
 }
 
-bool SysFuncCallNode::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool SysFuncCallNode::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
-	if (!ExprNode::sameAs(other, ignoreStreams))
+	if (!ExprNode::sameAs(csb, other, ignoreStreams))
 		return false;
 
 	const SysFuncCallNode* const otherNode = nodeAs<SysFuncCallNode>(other);
@@ -11349,9 +11385,9 @@ ValueExprNode* TrimNode::copy(thread_db* tdbb, NodeCopier& copier) const
 	return node;
 }
 
-bool TrimNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool TrimNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
-	if (!ExprNode::dsqlMatch(other, ignoreMapCast))
+	if (!ExprNode::dsqlMatch(dsqlScratch, other, ignoreMapCast))
 		return false;
 
 	const TrimNode* o = nodeAs<TrimNode>(other);
@@ -11360,9 +11396,9 @@ bool TrimNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 	return where == o->where;
 }
 
-bool TrimNode::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool TrimNode::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
-	if (!ExprNode::sameAs(other, ignoreStreams))
+	if (!ExprNode::sameAs(csb, other, ignoreStreams))
 		return false;
 
 	const TrimNode* const otherNode = nodeAs<TrimNode>(other);
@@ -11718,9 +11754,9 @@ ValueExprNode* UdfCallNode::copy(thread_db* tdbb, NodeCopier& copier) const
 	return node;
 }
 
-bool UdfCallNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
+bool UdfCallNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool ignoreMapCast) const
 {
-	if (!ExprNode::dsqlMatch(other, ignoreMapCast))
+	if (!ExprNode::dsqlMatch(dsqlScratch, other, ignoreMapCast))
 		return false;
 
 	const UdfCallNode* otherNode = nodeAs<UdfCallNode>(other);
@@ -11728,9 +11764,9 @@ bool UdfCallNode::dsqlMatch(const ExprNode* other, bool ignoreMapCast) const
 	return name == otherNode->name;
 }
 
-bool UdfCallNode::sameAs(const ExprNode* other, bool ignoreStreams) const
+bool UdfCallNode::sameAs(CompilerScratch* csb, const ExprNode* other, bool ignoreStreams) const
 {
-	if (!ExprNode::sameAs(other, ignoreStreams))
+	if (!ExprNode::sameAs(csb, other, ignoreStreams))
 		return false;
 
 	const UdfCallNode* const otherNode = nodeAs<UdfCallNode>(other);
@@ -12366,7 +12402,7 @@ void VariableNode::make(DsqlCompilerScratch* /*dsqlScratch*/, dsc* desc)
 	*desc = dsqlVar->desc;
 }
 
-bool VariableNode::dsqlMatch(const ExprNode* other, bool /*ignoreMapCast*/) const
+bool VariableNode::dsqlMatch(DsqlCompilerScratch* dsqlScratch, const ExprNode* other, bool /*ignoreMapCast*/) const
 {
 	const VariableNode* o = nodeAs<VariableNode>(other);
 	if (!o)
