@@ -64,7 +64,6 @@
 #include "firebird/Interface.h"
 #include "../common/StatementMetadata.h"
 #include "../common/IntlParametersBlock.h"
-#include "../common/isBpbSegmented.h"
 
 #include "../auth/SecurityDatabase/LegacyClient.h"
 #include "../auth/SecureRemotePassword/client/SrpClient.h"
@@ -303,6 +302,8 @@ int ResultSet::release()
 class Batch FB_FINAL : public RefCntIface<IBatchImpl<Batch, CheckStatusWrapper> >
 {
 public:
+	Batch(Statement* s, IMessageMetadata* inFmt, unsigned parLength, const unsigned char* par);
+
 	// IResultSet implementation
 	int release();
 	void add(Firebird::CheckStatusWrapper* status, unsigned count, const void* inBuffer);
@@ -316,56 +317,6 @@ public:
 	unsigned getBlobAlignment(Firebird::CheckStatusWrapper* status);
 	void setDefaultBpb(Firebird::CheckStatusWrapper* status, unsigned parLength, const unsigned char* par);
 	Firebird::IMessageMetadata* getMetadata(Firebird::CheckStatusWrapper* status);
-
-	Batch(Statement* s, IMessageMetadata* inFmt, unsigned parLength, const unsigned char* par)
-		: messageSize(0), alignedSize(0), flags(0), stmt(s),
-		  format(inFmt), blobAlign(0), blobPolicy(BLOB_IDS_NONE),
-		  tmpStatement(false)
-	{
-		LocalStatus ls;
-		CheckStatusWrapper st(&ls);
-
-		messageSize = format->getMessageLength(&st);
-		check(&st);
-		alignedSize = format->getAlignedLength(&st);
-		check(&st);
-
-		memset(&genId, 0, sizeof(genId));
-
-		ClumpletReader rdr(ClumpletReader::WideTagged, par, parLength);
-
-		for (rdr.rewind(); !rdr.isEof(); rdr.moveNext())
-		{
-			UCHAR t = rdr.getClumpTag();
-
-			switch (t)
-			{
-			case TAG_MULTIERROR:
-			case TAG_RECORD_COUNTS:
-				if (rdr.getInt())
-					flags |= (1 << t);
-				else
-					flags &= ~(1 << t);
-				break;
-
-			case TAG_BLOB_IDS:
-				blobPolicy = rdr.getInt();
-
-				switch (blobPolicy)
-				{
-				case BLOB_IDS_ENGINE:
-				case BLOB_IDS_USER:
-				case BLOB_IDS_STREAM:
-					break;
-				default:
-					blobPolicy = BLOB_IDS_NONE;
-					break;
-				}
-
-				break;
-			}
-		}
-	}
 
 private:
 	void freeClientData(CheckStatusWrapper* status, bool force = false);
@@ -2079,7 +2030,7 @@ Batch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMe
 
 		statement->rsr_flags.clear(Rsr::FETCHED);
 		statement->rsr_format = statement->rsr_bind_format;
-		statement->rsr_batch_blb_size = 0;
+		statement->rsr_batch_stream.blobRemaining = 0;
 		statement->clearException();
 
 		// set up the packet for the other guy...
@@ -2109,6 +2060,58 @@ Batch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMe
 	}
 
 	return NULL;
+}
+
+
+Batch::Batch(Statement* s, IMessageMetadata* inFmt, unsigned parLength, const unsigned char* par)
+	: messageSize(0), alignedSize(0), flags(0), stmt(s),
+	  format(inFmt), blobAlign(0), blobPolicy(BLOB_IDS_NONE),
+	  tmpStatement(false)
+{
+	LocalStatus ls;
+	CheckStatusWrapper st(&ls);
+
+	messageSize = format->getMessageLength(&st);
+	check(&st);
+	alignedSize = format->getAlignedLength(&st);
+	check(&st);
+
+	memset(&genId, 0, sizeof(genId));
+
+	ClumpletReader rdr(ClumpletReader::WideTagged, par, parLength);
+
+	for (rdr.rewind(); !rdr.isEof(); rdr.moveNext())
+	{
+		UCHAR t = rdr.getClumpTag();
+
+		switch (t)
+		{
+		case TAG_MULTIERROR:
+		case TAG_RECORD_COUNTS:
+			if (rdr.getInt())
+				flags |= (1 << t);
+			else
+				flags &= ~(1 << t);
+			break;
+
+		case TAG_BLOB_IDS:
+			blobPolicy = rdr.getInt();
+
+			switch (blobPolicy)
+			{
+			case BLOB_IDS_ENGINE:
+			case BLOB_IDS_USER:
+			case BLOB_IDS_STREAM:
+				break;
+			default:
+				blobPolicy = BLOB_IDS_NONE;
+				break;
+			}
+
+			break;
+		}
+	}
+	s->getStatement()->rsr_batch_flags = flags;
 }
 
 
@@ -2248,7 +2251,7 @@ void Batch::addBlobStream(CheckStatusWrapper* status, unsigned length, const voi
 		rem_port* port = rdb->rdb_port;
 		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
 
-		unsigned al = getBlobAlignment(status);		// will also set rsr_batch_blb_algn
+		unsigned al = getBlobAlignment(status);		// will also set rsr_batch_stream.alignment
 		if (length % al)
 			(Arg::Gds(isc_random) << "Portions of data, passed as blob stream, should have size "
                 "multiple to the alignment required for blobs").raise();
@@ -2336,7 +2339,7 @@ unsigned Batch::getBlobAlignment(CheckStatusWrapper* status)
 		if (buffer[0] == item)
 		{
 			int len = gds__vax_integer(&buffer[1], 2);
-			statement->rsr_batch_blb_algn = blobAlign = gds__vax_integer(&buffer[3], len);
+			statement->rsr_batch_stream.alignment = blobAlign = gds__vax_integer(&buffer[3], len);
 		}
 		else
 			(Arg::Gds(isc_random) << "Unexpected info buffer structure").raise();

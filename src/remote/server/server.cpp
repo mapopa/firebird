@@ -3377,7 +3377,7 @@ void rem_port::batch_create(P_BATCH_CREATE* batch, PACKET* sendL)
 			wrt.getBufferLength(), wrt.getBuffer());
 
 	statement->rsr_batch_size = 0;
-	statement->rsr_batch_blb_size = 0;
+	statement->rsr_batch_stream.blobRemaining = 0;
 	if (!(status_vector.getState() & Firebird::IStatus::STATE_ERRORS))
 	{
 		if (msgBuffer.metadata)
@@ -3394,7 +3394,7 @@ void rem_port::batch_create(P_BATCH_CREATE* batch, PACKET* sendL)
 			check(&status_vector);
 		}
 
-		statement->rsr_batch_blb_algn = statement->rsr_batch->getBlobAlignment(&status_vector);
+		statement->rsr_batch_stream.alignment = statement->rsr_batch->getBlobAlignment(&status_vector);
 		check(&status_vector);
 	}
 

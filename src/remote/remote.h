@@ -492,13 +492,44 @@ struct Rsr : public Firebird::GlobalStorage, public TypedHandle<rem_type_rsr>
 
 	ULONG			rsr_batch_size;		// Aligned message size for IBatch operations
 	ULONG			rsr_batch_flags;	// Flags for batch processing
-	ULONG			rsr_batch_blb_size;	// Remaining to transfer size of blob data
-	USHORT			rsr_batch_blb_algn;	// Alignment in BLOB stream
 	union								// BatchCS passed to XDR protocol
 	{
 		Firebird::IBatchCompletionState* rsr_batch_ics;	// server
 		Firebird::BatchCompletionState* rsr_batch_cs;	// client
 	};
+
+	void setFlag(UCHAR bit, bool value)
+	{
+		if (value)
+			rsr_batch_flags |= (1 << bit);
+		else
+			rsr_batch_flags &= ~(1 << bit);
+	}
+
+	struct BatchStream
+	{
+		BatchStream()
+			: curBpb(*getDefaultMemoryPool()), hdrPrevious(0)
+		{ }
+
+		static const ULONG SIZEOF_BLOB_HEAD = sizeof(ISC_QUAD) + 2 * sizeof(ULONG);
+
+		typedef Firebird::HalfStaticArray<UCHAR, 64> Bpb;
+		Bpb curBpb;
+		UCHAR hdr[SIZEOF_BLOB_HEAD];
+		ULONG blobRemaining;			// Remaining to transfer size of blob data
+		ULONG bpbRemaining;				// Remaining to transfer size of BPB
+		ULONG segRemaining;				// Remaining to transfer size of segment data
+		USHORT alignment;				// Alignment in BLOB stream
+		USHORT hdrPrevious;				// Header data left from previous block (in hdr)
+
+		void saveData(const UCHAR* data, ULONG size)
+		{
+			fb_assert(size + hdrPrevious <= SIZEOF_BLOB_HEAD);
+			memcpy(&hdr[hdrPrevious], data, size);
+		}
+	};
+	BatchStream		rsr_batch_stream;
 
 public:
 	// Values for rsr_flags.

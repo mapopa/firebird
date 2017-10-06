@@ -485,8 +485,8 @@ Firebird::IBatchCompletionState* DsqlBatch::execute(thread_db* tdbb)
 		{
 			ULONG remains;
 			UCHAR* data;
-			ULONG currentBlobSize = 0;
-			ULONG byteCount = 0;
+			ULONG currentBlobSize;
+			ULONG byteCount;
 
 			BlobFlow()
 				: remains(0), data(NULL), currentBlobSize(0), byteCount(0)
@@ -597,16 +597,8 @@ private:
 						{
 							if (flow.align(IBatch::BLOB_SEGHDR_ALIGN))
 								continue;
-							if (dataSize < sizeof(USHORT))
-							{
-								flow.remains = m_blobs.reget(flow.remains, &flow.data, BLOB_STREAM_ALIGN);
-								dataSize = MIN(flow.currentBlobSize, flow.remains);
-								if (dataSize < sizeof(USHORT))
-								{
-									ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
-										Arg::Gds(isc_random) << "Blob buffer format error: size of segment header exceeds remaining data");	// <<dataSize
-								}
-							}
+
+							fb_assert(dataSize >= sizeof(USHORT));
 							USHORT* segSize = reinterpret_cast<USHORT*>(flow.data);
 							flow.move(sizeof(USHORT));
 
@@ -665,6 +657,7 @@ private:
 	const dsql_msg* message = m_request->getStatement()->getSendMsg();
 	bool startRequest = true;
 
+	// process messages
 	ULONG remains;
 	UCHAR* data;
 	while ((remains = m_messages.get(&data)) > 0)
