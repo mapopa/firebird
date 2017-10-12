@@ -3365,11 +3365,11 @@ void rem_port::batch_create(P_BATCH_CREATE* batch, PACKET* sendL)
 		(Arg::Gds(isc_random) << "Invalid tag in parameters block").raise();
 	statement->rsr_batch_flags = (wrt.find(IBatch::TAG_RECORD_COUNTS) && wrt.getInt()) ?
 		(1 << IBatch::TAG_RECORD_COUNTS) : 0;
-	if (wrt.find(IBatch::TAG_BLOB_IDS) && (wrt.getInt() == IBatch::BLOB_IDS_ENGINE))
+	if (wrt.find(IBatch::TAG_BLOB_POLICY) && (wrt.getInt() == IBatch::BLOB_ID_ENGINE))
 	{
 		// we generate blob ids for further layers therefore change policy
 		wrt.deleteClumplet();
-		wrt.insertInt(IBatch::TAG_BLOB_IDS, IBatch::BLOB_IDS_USER);
+		wrt.insertInt(IBatch::TAG_BLOB_POLICY, IBatch::BLOB_ID_USER);
 	}
 
 	statement->rsr_batch =

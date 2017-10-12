@@ -2065,7 +2065,7 @@ Batch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMe
 
 Batch::Batch(Statement* s, IMessageMetadata* inFmt, unsigned parLength, const unsigned char* par)
 	: messageSize(0), alignedSize(0), flags(0), stmt(s),
-	  format(inFmt), blobAlign(0), blobPolicy(BLOB_IDS_NONE),
+	  format(inFmt), blobAlign(0), blobPolicy(BLOB_NONE),
 	  tmpStatement(false)
 {
 	LocalStatus ls;
@@ -2094,17 +2094,17 @@ Batch::Batch(Statement* s, IMessageMetadata* inFmt, unsigned parLength, const un
 				flags &= ~(1 << t);
 			break;
 
-		case TAG_BLOB_IDS:
+		case TAG_BLOB_POLICY:
 			blobPolicy = rdr.getInt();
 
 			switch (blobPolicy)
 			{
-			case BLOB_IDS_ENGINE:
-			case BLOB_IDS_USER:
-			case BLOB_IDS_STREAM:
+			case BLOB_ID_ENGINE:
+			case BLOB_ID_USER:
+			case BLOB_STREAM:
 				break;
 			default:
-				blobPolicy = BLOB_IDS_NONE;
+				blobPolicy = BLOB_NONE;
 				break;
 			}
 
@@ -2173,7 +2173,7 @@ void Batch::addBlob(CheckStatusWrapper* status, unsigned length, const void* inB
 		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
 
 		// Decide on blob ID
-		if (blobPolicy == IBatch::BLOB_IDS_ENGINE)
+		if (blobPolicy == IBatch::BLOB_ID_ENGINE)
 			genBlobId(blobId);
 
 		// Prepare packet ...
@@ -2382,7 +2382,7 @@ void Batch::registerBlob(CheckStatusWrapper* status, const ISC_QUAD* existingBlo
 		rem_port* port = rdb->rdb_port;
 		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
 
-		if (blobPolicy == IBatch::BLOB_IDS_ENGINE)
+		if (blobPolicy == IBatch::BLOB_ID_ENGINE)
 			genBlobId(blobId);
 
 		PACKET* packet = &rdb->rdb_packet;
@@ -2438,7 +2438,6 @@ IBatchCompletionState* Batch::execute(CheckStatusWrapper* status, ITransaction* 
 		send_packet(port, packet);
 
 		statement->rsr_batch_size = alignedSize;
-		statement->rsr_batch_flags = flags;
 		AutoPtr<BatchCompletionState, SimpleDispose<BatchCompletionState> >
 			cs(FB_NEW BatchCompletionState(flags & (1 << IBatch::TAG_RECORD_COUNTS), 256));
 		statement->rsr_batch_cs = cs;

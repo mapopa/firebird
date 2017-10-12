@@ -1783,12 +1783,12 @@ namespace Firebird
 		static const unsigned char TAG_MULTIERROR = 1;
 		static const unsigned char TAG_RECORD_COUNTS = 2;
 		static const unsigned char TAG_BUFFER_BYTES_SIZE = 3;
-		static const unsigned char TAG_BLOB_IDS = 4;
+		static const unsigned char TAG_BLOB_POLICY = 4;
 		static const unsigned char TAG_DETAILED_ERRORS = 5;
-		static const unsigned char BLOB_IDS_NONE = 0;
-		static const unsigned char BLOB_IDS_ENGINE = 1;
-		static const unsigned char BLOB_IDS_USER = 2;
-		static const unsigned char BLOB_IDS_STREAM = 3;
+		static const unsigned char BLOB_NONE = 0;
+		static const unsigned char BLOB_ID_ENGINE = 1;
+		static const unsigned char BLOB_ID_USER = 2;
+		static const unsigned char BLOB_STREAM = 3;
 		static const unsigned BLOB_SEGHDR_ALIGN = 2;
 
 		template <typename StatusType> void add(StatusType* status, unsigned count, const void* inBuffer)

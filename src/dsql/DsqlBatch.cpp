@@ -78,7 +78,7 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 	  m_bufferSize(BUFFER_LIMIT),
 	  m_lastBlob(MAX_ULONG),
 	  m_setBlobSize(false),
-	  m_blobPolicy(IBatch::BLOB_IDS_NONE)
+	  m_blobPolicy(IBatch::BLOB_NONE)
 {
 	memset(&m_genId, 0, sizeof(m_genId));
 
@@ -105,17 +105,17 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 			setFlag(t, pb.getInt());
 			break;
 
-		case IBatch::TAG_BLOB_IDS:
+		case IBatch::TAG_BLOB_POLICY:
 			m_blobPolicy = pb.getInt();
 
 			switch (m_blobPolicy)
 			{
-			case IBatch::BLOB_IDS_ENGINE:
-			case IBatch::BLOB_IDS_USER:
-			case IBatch::BLOB_IDS_STREAM:
+			case IBatch::BLOB_ID_ENGINE:
+			case IBatch::BLOB_ID_USER:
+			case IBatch::BLOB_STREAM:
 				break;
 			default:
-				m_blobPolicy = IBatch::BLOB_IDS_NONE;
+				m_blobPolicy = IBatch::BLOB_NONE;
 				break;
 			}
 
@@ -288,12 +288,12 @@ void DsqlBatch::blobCheckMode(bool stream, const char* fname)
 
 	switch (m_blobPolicy)
 	{
-	case IBatch::BLOB_IDS_ENGINE:
-	case IBatch::BLOB_IDS_USER:
+	case IBatch::BLOB_ID_ENGINE:
+	case IBatch::BLOB_ID_USER:
 		if (!stream)
 			return;
 		break;
-	case IBatch::BLOB_IDS_STREAM:
+	case IBatch::BLOB_STREAM:
 		if (stream)
 			return;
 		break;
@@ -352,7 +352,7 @@ void DsqlBatch::addBlob(thread_db* tdbb, ULONG length, const void* inBuffer, ISC
 	fb_assert(m_lastBlob % BLOB_STREAM_ALIGN == 0);
 
 	// Generate auto blob ID if needed
-	if (m_blobPolicy == IBatch::BLOB_IDS_ENGINE)
+	if (m_blobPolicy == IBatch::BLOB_ID_ENGINE)
 		genBlobId(blobId);
 
 	// Determine type of current blob
@@ -432,7 +432,7 @@ void DsqlBatch::registerBlob(thread_db*, const ISC_QUAD* existingBlob, ISC_QUAD*
 	blobCheckMeta();
 
 	// Generate auto blob ID if needed
-	if (m_blobPolicy == IBatch::BLOB_IDS_ENGINE)
+	if (m_blobPolicy == IBatch::BLOB_ID_ENGINE)
 		genBlobId(blobId);
 
 	registerBlob(existingBlob, blobId);

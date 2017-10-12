@@ -498,18 +498,10 @@ struct Rsr : public Firebird::GlobalStorage, public TypedHandle<rem_type_rsr>
 		Firebird::BatchCompletionState* rsr_batch_cs;	// client
 	};
 
-	void setFlag(UCHAR bit, bool value)
-	{
-		if (value)
-			rsr_batch_flags |= (1 << bit);
-		else
-			rsr_batch_flags &= ~(1 << bit);
-	}
-
 	struct BatchStream
 	{
 		BatchStream()
-			: curBpb(*getDefaultMemoryPool()), hdrPrevious(0)
+			: curBpb(*getDefaultMemoryPool()), hdrPrevious(0), segmented(false)
 		{ }
 
 		static const ULONG SIZEOF_BLOB_HEAD = sizeof(ISC_QUAD) + 2 * sizeof(ULONG);
@@ -522,11 +514,13 @@ struct Rsr : public Firebird::GlobalStorage, public TypedHandle<rem_type_rsr>
 		ULONG segRemaining;				// Remaining to transfer size of segment data
 		USHORT alignment;				// Alignment in BLOB stream
 		USHORT hdrPrevious;				// Header data left from previous block (in hdr)
+		bool segmented;					// Current blob kind
 
 		void saveData(const UCHAR* data, ULONG size)
 		{
 			fb_assert(size + hdrPrevious <= SIZEOF_BLOB_HEAD);
 			memcpy(&hdr[hdrPrevious], data, size);
+			hdrPrevious += size;
 		}
 	};
 	BatchStream		rsr_batch_stream;

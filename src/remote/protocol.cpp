@@ -118,6 +118,7 @@ static bool_t xdr_sql_message(XDR*, SLONG);
 static bool_t xdr_trrq_blr(XDR*, CSTRING*);
 static bool_t xdr_trrq_message(XDR*, USHORT);
 static bool_t xdr_bytes(XDR*, void*, ULONG);
+static bool_t xdr_blob_stream(XDR*, SSHORT, CSTRING*);
 static Rsr* getStatement(XDR*, USHORT);
 
 
@@ -1084,6 +1085,14 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
 			MAP(xdr_cstring_const, b->p_batch_blob_bpb);
 
+			Rsr* statement = getStatement(xdrs, b->p_batch_statement);
+			if (!statement)
+				return P_FALSE(xdrs, p);
+			if (fb_utils::isBpbSegmented(b->p_batch_blob_bpb.cstr_length, b->p_batch_blob_bpb.cstr_address))
+				statement->rsr_batch_flags |= (1 << Jrd::DsqlBatch::FLAG_DEFAULT_SEGMENTED);
+			else
+				statement->rsr_batch_flags &= ~(1 << Jrd::DsqlBatch::FLAG_DEFAULT_SEGMENTED);
+
 			return P_TRUE(xdrs, p);
 		}
 
@@ -1101,221 +1110,9 @@ bool_t xdr_protocol(XDR* xdrs, PACKET* p)
 		{
 			P_BATCH_BLOB* b = &p->p_batch_blob;
 			MAP(xdr_short, reinterpret_cast<SSHORT&>(b->p_batch_statement));
-			if (xdrs->x_op == XDR_FREE)
-			{
-				MAP(xdr_cstring, b->p_batch_blob_data);
-				return P_TRUE(xdrs, p);
-			}
-
-			Rsr* statement = getStatement(xdrs, b->p_batch_statement);
-			if (!statement)
-				return P_FALSE(xdrs, p);
-			Rsr::BatchStream localStrm(statement->rsr_batch_stream);
-
-			struct BlobFlow
-			{
-				ULONG remains;
-				UCHAR* data;
-				ULONG& blobSize;
-				ULONG& bpbSize;
-				ULONG& segSize;
-
-				BlobFlow(Rsr::BatchStream* b)
-					: remains(0), data(NULL),
-					  blobSize(b->blobRemaining), bpbSize(b->bpbRemaining), segSize(b->segRemaining)
-				{ }
-
-				void newBlob(ULONG totalSize, ULONG parSize)
-				{
-					blobSize = totalSize;
-					bpbSize = parSize;
-					segSize = 0;
-				}
-
-				void move(ULONG step)
-				{
-					move2(step);
-					blobSize -= step;
-				}
-
-				void moveBpb(ULONG step)
-				{
-					move(step);
-					bpbSize -= step;
-				}
-
-				void moveSeg(ULONG step)
-				{
-					move(step);
-					segSize -= step;
-				}
-
-				bool align(ULONG alignment)
-				{
-					ULONG a = IPTR(data) % alignment;
-					if (a)
-					{
-						a = alignment - a;
-						move2(a);
-						if (blobSize)
-							blobSize -= a;
-					}
-					return a;
-				}
-
-private:
-				void move2(ULONG step)
-				{
-					data += step;
-					remains -= step;
-				}
-			};
-
-			BlobFlow flow(&localStrm);
-			if (xdrs->x_op == XDR_ENCODE)
-			{
-				flow.remains = b->p_batch_blob_data.cstr_length;
-				b->p_batch_blob_data.cstr_length += localStrm.hdrPrevious;
-			}
-			MAP(xdr_u_long, b->p_batch_blob_data.cstr_length);
-			if (xdrs->x_op == XDR_DECODE)
-				flow.remains = b->p_batch_blob_data.cstr_length;
-
-			fb_assert(localStrm.alignment);
-			if (flow.remains % MAX(localStrm.alignment, IBatch::BLOB_SEGHDR_ALIGN))
-				return P_FALSE(xdrs, p);
-			if (!flow.remains)
-			{
-				return P_TRUE(xdrs, p);
-			}
-
-			if (xdrs->x_op == XDR_DECODE)
-			{
-				alloc_cstring(xdrs, &b->p_batch_blob_data);
-			}
-
-			flow.data = b->p_batch_blob_data.cstr_address;
-			if (IPTR(flow.data) % MAX(localStrm.alignment, IBatch::BLOB_SEGHDR_ALIGN) != 0)
+			if (!xdr_blob_stream(xdrs, b->p_batch_statement, &b->p_batch_blob_data))
 				return P_FALSE(xdrs, p);
 
-			while (flow.remains)
-			{
-				// we should process next blob header
-				if (!flow.blobSize)
-				{
-					// align data stream
-					if (flow.align(localStrm.alignment))
-						continue;
-
-					// check for partial header in the stream
-					if (flow.remains + localStrm.hdrPrevious < Rsr::BatchStream::SIZEOF_BLOB_HEAD)
-					{
-						// On the receiver that means packet protocol processing is complete: actual
-						// size of packet is sligtly less than passed in batch_blob_data.cstr_length.
-						if (xdrs->x_op == XDR_DECODE)
-							b->p_batch_blob_data.cstr_length -= flow.remains;
-						// On transmitter reserve partial header for future use
-						else
-							localStrm.saveData(flow.data, flow.remains);
-
-						// Done with packet
-						break;
-					}
-
-					// parse blob header
-					fb_assert(intptr_t(flow.data) % localStrm.alignment == 0);
-					unsigned char* hdrPtr = flow.data;	// default is to use header in data buffer
-					if (localStrm.hdrPrevious)
-					{
-						// on transmitter reserved partial header may be used
-						fb_assert(xdrs->x_op == XDR_ENCODE);
-						localStrm.saveData(flow.data, Rsr::BatchStream::SIZEOF_BLOB_HEAD - localStrm.hdrPrevious);
-						hdrPtr = localStrm.hdr;
-					}
-
-					ISC_QUAD* batchBlobId = reinterpret_cast<ISC_QUAD*>(hdrPtr);
-					ULONG* blobSize = reinterpret_cast<ULONG*>(hdrPtr + sizeof(ISC_QUAD));
-					ULONG* bpbSize = reinterpret_cast<ULONG*>(hdrPtr + sizeof(ISC_QUAD) + sizeof(ULONG));
-					MAP(xdr_quad, *batchBlobId);
-					MAP(xdr_u_long, *blobSize);
-					MAP(xdr_u_long, *bpbSize);
-
-					flow.move(Rsr::BatchStream::SIZEOF_BLOB_HEAD - localStrm.hdrPrevious);
-					localStrm.hdrPrevious = 0;
-					flow.newBlob(*blobSize, *bpbSize);
-					localStrm.curBpb.clear();
-
-					if (!flow.bpbSize)
-					{
-						statement->setFlag(Jrd::DsqlBatch::FLAG_CURRENT_SEGMENTED,
-							statement->rsr_batch_flags & (1 << Jrd::DsqlBatch::FLAG_DEFAULT_SEGMENTED));
-					}
-
-					continue;
-				}
-
-				// process BPB
-				if (flow.bpbSize)
-				{
-					ULONG size = MIN(flow.bpbSize, flow.remains);
-					if (!xdr_bytes(xdrs, flow.data, size))
-						return P_FALSE(xdrs, p);
-					localStrm.curBpb.add(flow.data, size);
-					flow.moveBpb(size);
-					if (flow.bpbSize == 0)		// bpb is passed completely
-					{
-						try
-						{
-							statement->setFlag(Jrd::DsqlBatch::FLAG_CURRENT_SEGMENTED,
-								fb_utils::isBpbSegmented(localStrm.curBpb.getCount(), localStrm.curBpb.begin()));
-						}
-						catch (const Exception&)
-						{
-							return P_FALSE(xdrs, p);
-						}
-					}
-					localStrm.curBpb.clear();
-
-					continue;
-				}
-
-				// pass data
-				ULONG dataSize = MIN(flow.blobSize, flow.remains);
-				if (dataSize)
-				{
-					if (statement->rsr_batch_flags & (1 << Jrd::DsqlBatch::FLAG_CURRENT_SEGMENTED))
-					{
-						if (!flow.segSize)
-						{
-							if (flow.align(IBatch::BLOB_SEGHDR_ALIGN))
-								continue;
-
-							USHORT* segSize = reinterpret_cast<USHORT*>(flow.data);
-							MAP(xdr_u_short, *segSize);
-							flow.segSize = *segSize;
-							flow.move(sizeof(USHORT));
-
-							if (flow.segSize > flow.blobSize)
-							{
-								return P_FALSE(xdrs, p);
-							}
-						}
-
-						dataSize = MIN(flow.segSize, flow.remains);
-						if (!xdr_bytes(xdrs, flow.data, dataSize))
-							return P_FALSE(xdrs, p);
-						flow.moveSeg(dataSize);
-					}
-					else
-					{
-						if (!xdr_bytes(xdrs, flow.data, dataSize))
-							return P_FALSE(xdrs, p);
-						flow.move(dataSize);
-					}
-				}
-			}
-
-			statement->rsr_batch_stream = localStrm;	// packet processed successfully
 			return P_TRUE(xdrs, p);
 		}
 
@@ -2431,3 +2228,223 @@ static Rsr* getStatement(XDR* xdrs, USHORT statement_id)
 
 	return port->port_statement;
 }
+
+static bool_t xdr_blob_stream(XDR* xdrs, SSHORT statement_id, CSTRING* strmPortion)
+{
+	if (xdrs->x_op == XDR_FREE)
+		return xdr_cstring(xdrs, strmPortion);
+
+	Rsr* statement = getStatement(xdrs, statement_id);
+	if (!statement)
+		return FALSE;
+
+	// create local copy - required in a case when packet is not complete and will be restarted
+	Rsr::BatchStream localStrm(statement->rsr_batch_stream);
+
+	struct BlobFlow
+	{
+		ULONG remains;
+		UCHAR* streamPtr;
+		ULONG& blobSize;
+		ULONG& bpbSize;
+		ULONG& segSize;
+
+		BlobFlow(Rsr::BatchStream* bs)
+			: remains(0), streamPtr(NULL),
+			  blobSize(bs->blobRemaining), bpbSize(bs->bpbRemaining), segSize(bs->segRemaining)
+		{ }
+
+		void newBlob(ULONG totalSize, ULONG parSize)
+		{
+			blobSize = totalSize;
+			bpbSize = parSize;
+			segSize = 0;
+		}
+
+		void move(ULONG step)
+		{
+			move2(step);
+			blobSize -= step;
+		}
+
+		void moveBpb(ULONG step)
+		{
+			move(step);
+			bpbSize -= step;
+		}
+
+		void moveSeg(ULONG step)
+		{
+			move(step);
+			segSize -= step;
+		}
+
+		bool align(ULONG alignment)
+		{
+			ULONG a = IPTR(streamPtr) % alignment;
+			if (a)
+			{
+				a = alignment - a;
+				move2(a);
+				if (blobSize)
+					blobSize -= a;
+			}
+			return a;
+		}
+
+private:
+		void move2(ULONG step)
+		{
+			streamPtr += step;
+			remains -= step;
+		}
+	};
+
+	BlobFlow flow(&localStrm);
+
+	if (xdrs->x_op == XDR_ENCODE)
+	{
+		flow.remains = strmPortion->cstr_length;
+		strmPortion->cstr_length += localStrm.hdrPrevious;
+	}
+	if (!xdr_u_long(xdrs, &strmPortion->cstr_length))
+		return FALSE;
+	if (xdrs->x_op == XDR_DECODE)
+		flow.remains = strmPortion->cstr_length;
+
+	fb_assert(localStrm.alignment);
+	if (flow.remains % localStrm.alignment)
+		return FALSE;
+	if (!flow.remains)
+		return TRUE;
+
+	if (xdrs->x_op == XDR_DECODE)
+		alloc_cstring(xdrs, strmPortion);
+
+	flow.streamPtr = strmPortion->cstr_address;
+	if (IPTR(flow.streamPtr) % localStrm.alignment != 0)
+		return FALSE;
+
+	while (flow.remains)
+	{
+		if (!flow.blobSize)		// we should process next blob header
+		{
+			// align data stream
+			if (flow.align(localStrm.alignment))
+				continue;
+
+			// check for partial header in the stream
+			if (flow.remains + localStrm.hdrPrevious < Rsr::BatchStream::SIZEOF_BLOB_HEAD)
+			{
+				// On the receiver that means packet protocol processing is complete: actual
+				// size of packet is sligtly less than passed in batch_blob_data.cstr_length.
+				if (xdrs->x_op == XDR_DECODE)
+					strmPortion->cstr_length -= flow.remains;
+				// On transmitter reserve partial header for future use
+				else
+					localStrm.saveData(flow.streamPtr, flow.remains);
+
+				// Done with packet
+				break;
+			}
+
+			// parse blob header
+			fb_assert(intptr_t(flow.streamPtr) % localStrm.alignment == 0);
+			unsigned char* hdrPtr = flow.streamPtr;	// default is to use header in main buffer
+			unsigned hdrOffset = Rsr::BatchStream::SIZEOF_BLOB_HEAD;
+			if (localStrm.hdrPrevious)
+			{
+				// on transmitter reserved partial header may be used
+				fb_assert(xdrs->x_op == XDR_ENCODE);
+				hdrOffset -= localStrm.hdrPrevious;
+				localStrm.saveData(flow.streamPtr, hdrOffset);
+				hdrPtr = localStrm.hdr;
+			}
+
+			ISC_QUAD* batchBlobId = reinterpret_cast<ISC_QUAD*>(hdrPtr);
+			ULONG* blobSize = reinterpret_cast<ULONG*>(hdrPtr + sizeof(ISC_QUAD));
+			ULONG* bpbSize = reinterpret_cast<ULONG*>(hdrPtr + sizeof(ISC_QUAD) + sizeof(ULONG));
+			if (!xdr_quad(xdrs, batchBlobId))
+				return FALSE;
+			if (!xdr_u_long(xdrs, blobSize))
+				return FALSE;
+			if (!xdr_u_long(xdrs, bpbSize))
+				return FALSE;
+
+			flow.move(hdrOffset);
+			localStrm.hdrPrevious = 0;
+			flow.newBlob(*blobSize, *bpbSize);
+			localStrm.curBpb.clear();
+
+			if (!flow.bpbSize)
+				localStrm.segmented = statement->rsr_batch_flags & (1 << Jrd::DsqlBatch::FLAG_DEFAULT_SEGMENTED);
+
+			continue;
+		}
+
+		// process BPB
+		if (flow.bpbSize)
+		{
+			ULONG size = MIN(flow.bpbSize, flow.remains);
+			if (!xdr_bytes(xdrs, flow.streamPtr, size))
+				return FALSE;
+			localStrm.curBpb.add(flow.streamPtr, size);
+			flow.moveBpb(size);
+			if (flow.bpbSize == 0)		// bpb is passed completely
+			{
+				try
+				{
+					localStrm.segmented = fb_utils::isBpbSegmented(localStrm.curBpb.getCount(),
+						localStrm.curBpb.begin());
+				}
+				catch (const Exception&)
+				{
+					return FALSE;
+				}
+				localStrm.curBpb.clear();
+			}
+
+			continue;
+		}
+
+		// pass data
+		ULONG dataSize = MIN(flow.blobSize, flow.remains);
+		if (dataSize)
+		{
+			if (localStrm.segmented)
+			{
+				if (!flow.segSize)
+				{
+					if (flow.align(IBatch::BLOB_SEGHDR_ALIGN))
+						continue;
+
+					USHORT* segSize = reinterpret_cast<USHORT*>(flow.streamPtr);
+					if (!xdr_u_short(xdrs, segSize))
+						return FALSE;
+					flow.segSize = *segSize;
+					flow.move(sizeof(USHORT));
+
+					if (flow.segSize > flow.blobSize)
+						return FALSE;
+				}
+
+				dataSize = MIN(flow.segSize, flow.remains);
+				if (!xdr_bytes(xdrs, flow.streamPtr, dataSize))
+					return FALSE;
+				flow.moveSeg(dataSize);
+			}
+			else
+			{
+				if (!xdr_bytes(xdrs, flow.streamPtr, dataSize))
+					return FALSE;
+				flow.move(dataSize);
+			}
+		}
+	}
+
+	// packet processed successfully - save stream data for next one
+	statement->rsr_batch_stream = localStrm;
+
+	return TRUE;
+}
+
