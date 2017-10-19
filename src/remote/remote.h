@@ -1254,7 +1254,7 @@ public:
 	void		start_crypt(P_CRYPT*, PACKET*);
 	void		batch_create(P_BATCH_CREATE*, PACKET*);
 	void		batch_msg(P_BATCH_MSG*, PACKET*);
-	void		batch_blob(P_OP, P_BATCH_BLOB*, PACKET*);
+	void		batch_blob_stream(P_BATCH_BLOB*, PACKET*);
 	void		batch_regblob(P_BATCH_REGBLOB*, PACKET*);
 	void		batch_exec(P_BATCH_EXEC*, PACKET*);
 	void		batch_rls(P_BATCH_FREE*, PACKET*);

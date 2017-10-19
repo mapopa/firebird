@@ -55,7 +55,8 @@ public:
 	~DsqlBatch();
 
 	static const ULONG RAM_BATCH = 128 * 1024;
-	static const ULONG BUFFER_LIMIT = 10 * 1024 * 1024;
+	static const ULONG BUFFER_LIMIT = 16 * 1024 * 1024;
+	static const ULONG HARD_BUFFER_LIMIT = 256 * 1024 * 1024;
 	static const ULONG DETAILED_LIMIT = 64;
 	static const ULONG SIZEOF_BLOB_HEAD = sizeof(ISC_QUAD) + 2 * sizeof(ULONG);
 	static const unsigned BLOB_STREAM_ALIGN = 4;

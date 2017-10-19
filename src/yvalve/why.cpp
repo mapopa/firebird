@@ -2707,6 +2707,30 @@ ISC_STATUS API_ROUTINE fb_dsql_set_timeout(ISC_STATUS* userStatus, FB_API_HANDLE
 }
 
 
+// Get statement interface by legacy handle
+ISC_STATUS API_ROUTINE fb_get_statement_interface(ISC_STATUS* userStatus, FB_API_HANDLE* stmtHandle,
+	void** stmtIface)
+{
+	StatusVector status(userStatus);
+	CheckStatusWrapper statusWrapper(&status);
+
+	try
+	{
+		RefPtr<IscStatement> statement(translateHandle(statements, stmtHandle));
+		statement->checkPrepared(isc_info_unprepared_stmt);
+
+		fb_assert(statement->statement);
+		*stmtIface = static_cast<IStatement*>(statement->statement);
+	}
+	catch (const Exception& e)
+	{
+		e.stuffException(&statusWrapper);
+	}
+
+	return status[1];
+}
+
+
 // Provide information on sql statement.
 ISC_STATUS API_ROUTINE isc_dsql_sql_info(ISC_STATUS* userStatus, FB_API_HANDLE* stmtHandle,
 	SSHORT itemLength, const SCHAR* items, SSHORT bufferLength, SCHAR* buffer)

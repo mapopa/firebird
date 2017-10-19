@@ -3365,11 +3365,11 @@ void rem_port::batch_create(P_BATCH_CREATE* batch, PACKET* sendL)
 		(Arg::Gds(isc_random) << "Invalid tag in parameters block").raise();
 	statement->rsr_batch_flags = (wrt.find(IBatch::TAG_RECORD_COUNTS) && wrt.getInt()) ?
 		(1 << IBatch::TAG_RECORD_COUNTS) : 0;
-	if (wrt.find(IBatch::TAG_BLOB_POLICY) && (wrt.getInt() == IBatch::BLOB_ID_ENGINE))
+	if (wrt.find(IBatch::TAG_BLOB_POLICY) && (wrt.getInt() != IBatch::BLOB_STREAM))
 	{
-		// we generate blob ids for further layers therefore change policy
+		// we always send blobs in a stream therefore change policy
 		wrt.deleteClumplet();
-		wrt.insertInt(IBatch::TAG_BLOB_POLICY, IBatch::BLOB_ID_USER);
+		wrt.insertInt(IBatch::TAG_BLOB_POLICY, IBatch::BLOB_STREAM);
 	}
 
 	statement->rsr_batch =
@@ -3420,7 +3420,7 @@ void rem_port::batch_msg(P_BATCH_MSG* batch, PACKET* sendL)
 }
 
 
-void rem_port::batch_blob(P_OP op, P_BATCH_BLOB* batch, PACKET* sendL)
+void rem_port::batch_blob_stream(P_BATCH_BLOB* batch, PACKET* sendL)
 {
 	LocalStatus ls;
 	CheckStatusWrapper status_vector(&ls);
@@ -3430,24 +3430,8 @@ void rem_port::batch_blob(P_OP op, P_BATCH_BLOB* batch, PACKET* sendL)
 	statement->checkIface();
 	statement->checkBatch();
 
-	switch(op)
-	{
-	case op_batch_blob:
-		statement->rsr_batch->addBlob(&status_vector, batch->p_batch_blob_data.cstr_length,
-			batch->p_batch_blob_data.cstr_address, &batch->p_batch_blob_id,
-			batch->p_batch_blob_bpb.cstr_length, batch->p_batch_blob_bpb.cstr_address);
-		break;
-
-	case op_batch_addblob:
-		statement->rsr_batch->appendBlobData(&status_vector,
-			batch->p_batch_blob_data.cstr_length, batch->p_batch_blob_data.cstr_address);
-		break;
-
-	case op_batch_blob_stream:
-		statement->rsr_batch->addBlobStream(&status_vector,
-			batch->p_batch_blob_data.cstr_length, batch->p_batch_blob_data.cstr_address);
-		break;
-	}
+	statement->rsr_batch->addBlobStream(&status_vector,
+		batch->p_batch_blob_data.cstr_length, batch->p_batch_blob_data.cstr_address);
 
 	this->send_response(sendL, 0, 0, &status_vector, true);
 }
@@ -3463,7 +3447,7 @@ void rem_port::batch_bpb(P_BATCH_SETBPB* batch, PACKET* sendL)
 	statement->checkBatch();
 
 	statement->rsr_batch->setDefaultBpb(&status_vector,
-			batch->p_batch_blob_bpb.cstr_length, batch->p_batch_blob_bpb.cstr_address);
+		batch->p_batch_blob_bpb.cstr_length, batch->p_batch_blob_bpb.cstr_address);
 
 	this->send_response(sendL, 0, 0, &status_vector, true);
 }
@@ -4786,10 +4770,8 @@ static bool process_packet(rem_port* port, PACKET* sendL, PACKET* receive, rem_p
 			port->batch_rls(&receive->p_batch_free, sendL);
 			break;
 
-		case op_batch_blob:
-		case op_batch_addblob:
 		case op_batch_blob_stream:
-			port->batch_blob(op, &receive->p_batch_blob, sendL);
+			port->batch_blob_stream(&receive->p_batch_blob, sendL);
 			break;
 
 		case op_batch_regblob:

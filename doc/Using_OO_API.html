@@ -6,7 +6,9 @@
 	<meta name="generator" content="LibreOffice 5.2.7.2 (Linux)"/>
 	<meta name="author" content="alex "/>
 	<meta name="created" content="00:00:00"/>
-	<meta name="changed" content="2017-10-12T20:21:46.080329427"/>
+	<meta name="changed" content="2017-10-19T18:08:13.851823604"/>
+	<meta name="created" content="00:00:00">
+	<meta name="changed" content="2017-10-12T20:21:46.080329427">
 	<meta name="created" content="00:00:00">
 	<meta name="changed" content="2017-10-10T12:13:42.449014488">
 	<meta name="created" content="00:00:00">
@@ -41,8 +43,10 @@ independent</b></font> – <font size="4" style="font-size: 14pt">that
 means that to define/use them one need not use language specific
 constructions like </font><font size="4" style="font-size: 14pt"><i>class</i></font>
 <font size="4" style="font-size: 14pt">in C++, interface may be
-defined using any language having concepts of array and pointer to
-procedure/function. Next interfaces are </font><span style="font-variant: normal"><font size="4" style="font-size: 14pt"><span style="font-style: normal"><b>versioned</b></span></font></span>
+defined using any language </font><font size="4" style="font-size: 14pt">able
+to call functions using C calling conventions and </font><font size="4" style="font-size: 14pt">having
+concepts of array and pointer to procedure/function. Next interfaces
+are </font><span style="font-variant: normal"><font size="4" style="font-size: 14pt"><span style="font-style: normal"><b>versioned</b></span></font></span>
 – <font size="4" style="font-size: 14pt">i.e. we support different
 versions of same interface. Binary layout of interfaces is designed
 to support that features very efficient (there is no need in
@@ -843,7 +847,8 @@ finishing with blob do not forget to close it:</font></p>
 <p style="margin-bottom: 0cm"><br/>
 
 </p>
-<h1><font size="4" style="font-size: 14pt">Modifying data in a batch.</font></h1>
+<h1><a name="Modifying data in a batch"></a><font size="4" style="font-size: 14pt">Modifying
+data in a batch.</font></h1>
 <p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt">Since
 version 4 firebird supports batch execution of statements with input
 parameters – that means sending more than single set of parameters
@@ -1046,7 +1051,7 @@ big enough not to fit into your existing buffer you may instead
 reallocating buffer use appendBlobData() method. It appends more data
 to last added blob. </font>
 </p>
-<p style="font-variant: normal; font-style: normal"><font size="4" style="font-size: 14pt"><i>batch-&gt;addBlob(&amp;status,
+<p style="font-variant: normal"><font size="4" style="font-size: 14pt"><i>batch-&gt;addBlob(&amp;status,
 descriptionSize, descriptionText, &amp;project→desc, bpbLength,
 bpb);</i></font></p>
 <p style="font-variant: normal; font-style: normal"><font size="4" style="font-size: 14pt">After
@@ -1100,24 +1105,34 @@ the batch per single call. Blob stream is a sequence of blobs, each
 starts with blob header. Header should be appropriately aligned -
 <a href="#Batch">Batch</a> interface provides special call for this
 purpose:</span></font></span></p>
-<p><i><span style="font-variant: normal"><font size="4" style="font-size: 14pt">unsigned
-alignment = batch-&gt;getBlobAlignment(&amp;status);</font></span></i></p>
-<p><span style="font-variant: normal"><font size="4" style="font-size: 14pt"><span style="font-style: normal">It’s
+<p style="font-variant: normal"><font size="4" style="font-size: 14pt"><i>unsigned
+alignment = batch-&gt;getBlobAlignment(&amp;status);</i></font></p>
+<p style="font-variant: normal; font-style: normal"><font size="4" style="font-size: 14pt">It’s
 supposed that all components of blob stream in a batch should be
 aligned at least at alignment boundary, including size of stream
 potions passed to addBlobStream() which should be a multiple of this
-alignment. Header contains 3 fields – 8-byte blob ID, 4-byte total
-blob size and 4 byte BPB size. Total blob size includes BPB inside,
-i.e. one will always find next blob in the stream in blob-size bytes
-after the header (taking into account the alignment). BPB (if
-present, i.e. if BPB size is not zero) is placed right after the
-header. After BPB BLOB data goes, it’s format depends upon blob
-type – stream or segmented. In case of stream blob it’s a plain
-sequence of bytes having size blob-size – BPB-size. With segmented
-blob things are a bit more compicated: blob data is a set of segments
-where each segment has the following format – 2-bytes size of
-segment (this should be aligned at IBatch::BLOB_SEGHDR_ALIGN
-boundary) followed by stored in this 2 bytes number of bytes.</span></font></span></p>
+alignment. Header contains 3 fields – 8-byte blob ID (must be
+non-zero), 4-byte total blob size and 4 byte BPB size. Total blob
+size includes BPB inside, i.e. one will always find next blob in the
+stream in blob-size bytes after the header (taking into account the
+alignment). BPB (if present, i.e. if BPB size is not zero) is placed
+right after the header. After BPB blob data goes, it’s format
+depends upon blob type – stream or segmented. In case of stream
+blob it’s a plain sequence of bytes having size blob-size –
+BPB-size. With segmented blob things are a bit more compicated: blob
+data is a set of segments where each segment has the following format
+– 2-bytes size of segment (this should be aligned at
+IBatch::BLOB_SEGHDR_ALIGN boundary) followed by stored in this 2
+bytes number of bytes.</font></p>
+<p style="font-variant: normal; font-style: normal"><font size="4" style="font-size: 14pt">When
+big blob is added to the stream it’s size is not always known in
+advance. In order not to have too big buffer for that blob (remember,
+size should be provided in blob header, before blob data) blob
+continuation record may be used. In blob header you leave blob size
+at a value known when creating that header and add continuation
+record that has format absolutely same as blob header, but here blob
+ID must be zero and BPB size must always be zero too. Typically you
+will want to have one continuation record per addBlobStream() call.</font></p>
 <p><a name="Batch::registerBlob"></a><span style="font-variant: normal"><font size="4" style="font-size: 14pt"><span style="font-style: normal">Last
 method used to work with blobs stands alone from the first three that
 pass blob data inline with the rest of batch data </span></font></span><span style="font-variant: normal">–
@@ -1825,12 +1840,19 @@ parameters in single statement execution.</font></p>
 	<li/>
 <p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt">void
 	addBlob(StatusType* status, unsigned</font> <font size="4" style="font-size: 14pt">length,
-	const void* inBuffer, ISC_QUAD* blobId) – adds single blob having
-	length bytes from inBuffer to the batch, blob identifier is located
-	at blobId address. Total size of inline blobs that can be added to
-	the batch is limited by BUFFER_BYTES_SIZE <a href="#Batch_PB">parameter</a>
-	of batch creation (affects all blob-oriented methods except
-	registerBlob()).</font></p>
+	const void* inBuffer, ISC_QUAD* blobId, </font><font size="4" style="font-size: 14pt">unsigned
+	bpbLength, const unsigned char* bpb</font><font size="4" style="font-size: 14pt">)
+	– adds single blob having length bytes from inBuffer to the batch,
+	blob identifier is located at blobId address. </font><font size="4" style="font-size: 14pt">If
+	blob should be created with non-default parameters BPB may be passed
+	(format matches one used in <a href="#Attachment">Attachment</a>::createBlob).</font><font size="4" style="font-size: 14pt">Total
+	size of inline blobs that can be added to the batch </font><font size="4" style="font-size: 14pt">(including
+	optional BPBs, blob headers, segment sizes and taking into an
+	accoount alignment) </font><font size="4" style="font-size: 14pt">is
+	limited by BUFFER_BYTES_SIZE <a href="#Batch_PB">parameter</a> of
+	batch creation (affects all blob-oriented methods except
+	registerBlob()). </font>
+	</p>
 	<li/>
 <p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt">void
 	appendBlobData(StatusType* status, unsigned length, const void*
@@ -1841,12 +1863,15 @@ parameters in single statement execution.</font></p>
 	addBlobStream(StatusType* status, unsigned length, const void*
 	inBuffer) – adds blob data (this can be multiple objects or part
 	of single blob) to the batch. Header of each blob in the stream is
-	aligned at getBlobAlignment() boundary and contains 2 fields: first
+	aligned at getBlobAlignment() boundary and contains 3 fields: first
 	- 8-bytes blob identifier (in ISC_QUAD format), second - 4-bytes
-	length of blob. Blob header should not cross boundaries of buffer in
-	this function call. After header blob data (length bytes long) goes.
-	Blob data (unlike header) may be distributed between multiple
-	addBlobStream() calls.</font></p>
+	length of blob, third – 4-bytes length of BPB. Blob header should
+	not cross boundaries of buffer in this function call. BPB data is
+	placed right after header, blob data goes next. Length of blob
+	includes BPB (if it present). All data may be distributed between
+	multiple addBlobStream() calls. Blob data in turn may be structured
+	in case of segmented blob, see chapter “<a href="#Modifying data in a batch">Modifying
+	data in a batch</a>”.</font></p>
 	<li/>
 <p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt">void
 	registerBlob(StatusType* status, const ISC_QUAD* existingBlob,
@@ -1881,12 +1906,16 @@ parameters in single statement execution.</font></p>
 <p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt">IMessageMetadata*
 	getMetadata(StatusType* status) – return format of metadata used
 	in batch’s messages.</font></p>
+	<li/>
+<p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt">void
+	setDefaultBpb(StatusType* status, unsigned parLength, const unsigned
+	char* par) – sets BPB which will be used for all blobs missing
+	non-default BPB. Must be called before adding any message or blob to
+	batch.</font></p>
 </ol>
 <p style="margin-bottom: 0cm"><a name="Batch_PB"></a><font size="4" style="font-size: 14pt">Tag
 for parameters block:</font></p>
 <p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt">VERSION1</font></p>
-<p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt">CURRENT_VERSION
-= VERSION1</font></p>
 <p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt">Tags
 for clumplets in parameters block:</font></p>
 <p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt">MULTIERROR

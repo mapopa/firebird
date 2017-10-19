@@ -281,11 +281,9 @@ enum P_OP
 	op_batch_exec			= 101,
 	op_batch_rls			= 102,
 	op_batch_cs				= 103,
-	op_batch_blob			= 104,
-	op_batch_addblob		= 105,
-	op_batch_regblob		= 106,
-	op_batch_blob_stream	= 107,
-	op_batch_set_bpb		= 108,
+	op_batch_regblob		= 104,
+	op_batch_blob_stream	= 105,
+	op_batch_set_bpb		= 106,
 
 	op_max
 };
@@ -696,8 +694,6 @@ typedef struct p_batch_free
 typedef struct p_batch_blob
 {
 	OBJCT			p_batch_statement;	// statement object
-	SQUAD			p_batch_blob_id;	// blob id
-	CSTRING_CONST	p_batch_blob_bpb;	// BPB
 	CSTRING			p_batch_blob_data;	// data
 } P_BATCH_BLOB;
 
@@ -763,7 +759,7 @@ typedef struct packet
 	P_BATCH_EXEC p_batch_exec;	// Run batch
 	P_BATCH_FREE p_batch_free;	// Destroy batch
 	P_BATCH_CS p_batch_cs;		// Batch completion state
-	P_BATCH_BLOB p_batch_blob;	// BLOB in batch
+	P_BATCH_BLOB p_batch_blob;	// BLOB stream portion in batch
 	P_BATCH_REGBLOB p_batch_regblob;	// Register already existing BLOB in batch
 	P_BATCH_SETBPB p_batch_setbpb;		// Set default BPB for batch
 

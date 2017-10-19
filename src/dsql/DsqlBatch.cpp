@@ -129,8 +129,8 @@ DsqlBatch::DsqlBatch(dsql_req* req, const dsql_msg* /*message*/, IMessageMetadat
 
 		case IBatch::TAG_BUFFER_BYTES_SIZE:
 			m_bufferSize = pb.getInt();
-			if (m_bufferSize > BUFFER_LIMIT * 4)
-				m_bufferSize = BUFFER_LIMIT * 4;
+			if (m_bufferSize > HARD_BUFFER_LIMIT)
+				m_bufferSize = HARD_BUFFER_LIMIT;
 			break;
 		}
 	}
@@ -557,36 +557,53 @@ private:
 						flow.newHdr(*blobSize);
 						ULONG currentBpbSize = *bpbSize;
 
-						// get BPB
-						Bpb localBpb;
-						Bpb* bpb;
-						bool segmentedMode;
-						if (currentBpbSize)
+						if (batchBlobId->gds_quad_high == 0 && batchBlobId->gds_quad_low == 0)
 						{
-							if (currentBpbSize > flow.remains)
-								flow.remains = m_blobs.reget(flow.remains, &flow.data, BLOB_STREAM_ALIGN);
-							if (currentBpbSize > flow.remains)
+							// Sanity check
+							if (*bpbSize)
 							{
 								ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
-									Arg::Gds(isc_random) << "Blob buffer format error: size of BPB greater than remaining data");	// <<currentBpbSize
+									Arg::Gds(isc_random) << "Blob buffer format error: blob continuation should not contain BPB");
 							}
-							localBpb.add(flow.data, currentBpbSize);
-							bpb = &localBpb;
-							segmentedMode = fb_utils::isBpbSegmented(currentBpbSize, flow.data);
-							flow.move(currentBpbSize);
 						}
 						else
 						{
-							bpb = &m_defaultBpb;
-							segmentedMode = m_flags & (1 << FLAG_DEFAULT_SEGMENTED);
-						}
-						setFlag(FLAG_CURRENT_SEGMENTED, segmentedMode);
+							// get BPB
+							Bpb localBpb;
+							Bpb* bpb;
+							bool segmentedMode;
+							if (currentBpbSize)
+							{
+								if (currentBpbSize > flow.remains)
+									flow.remains = m_blobs.reget(flow.remains, &flow.data, BLOB_STREAM_ALIGN);
+								if (currentBpbSize > flow.remains)
+								{
+									ERRD_post(Arg::Gds(isc_sqlerr) << Arg::Num(-104) <<
+										Arg::Gds(isc_random) << "Blob buffer format error: size of BPB greater than remaining data");	// <<currentBpbSize
+								}
+								localBpb.add(flow.data, currentBpbSize);
+								bpb = &localBpb;
+								segmentedMode = fb_utils::isBpbSegmented(currentBpbSize, flow.data);
+								flow.move(currentBpbSize);
+							}
+							else
+							{
+								bpb = &m_defaultBpb;
+								segmentedMode = m_flags & (1 << FLAG_DEFAULT_SEGMENTED);
+							}
+							setFlag(FLAG_CURRENT_SEGMENTED, segmentedMode);
 
-						// create blob
-						bid engineBlobId;
-						blob = blb::create2(tdbb, transaction, &engineBlobId, bpb->getCount(),
-							bpb->begin(), true);
-						registerBlob(reinterpret_cast<ISC_QUAD*>(&engineBlobId), batchBlobId);
+							// create blob
+							if (blob)
+							{
+								blob->BLB_close(tdbb);
+								blob = nullptr;
+							}
+							bid engineBlobId;
+							blob = blb::create2(tdbb, transaction, &engineBlobId, bpb->getCount(),
+								bpb->begin(), true);
+							registerBlob(reinterpret_cast<ISC_QUAD*>(&engineBlobId), batchBlobId);
+						}
 					}
 
 					// store data
@@ -622,25 +639,23 @@ private:
 						blob->BLB_put_segment(tdbb, flow.data, dataSize);
 						flow.move(dataSize);
 					}
-
-					if (blob && !flow.currentBlobSize)
-					{
-						blob->BLB_close(tdbb);
-						blob = nullptr;
-					}
 				}
 
 				m_blobs.remained(0);
 			}
 
-			fb_assert(!blob);
 			if (blob)
-				blob->BLB_cancel(tdbb);
+			{
+				blob->BLB_close(tdbb);
+				blob = nullptr;
+			}
 		}
 		catch (const Exception&)
 		{
 			if (blob)
 				blob->BLB_cancel(tdbb);
+			cancel(tdbb);
+
 			throw;
 		}
 	}
