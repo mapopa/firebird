@@ -958,6 +958,7 @@ public:
 	bool	dpb_nolinger;
 	bool	dpb_reset_icu;
 	bool	dpb_map_attach;
+	ULONG	dpb_remote_flags;
 
 	// here begin compound objects
 	// for constructor to work properly dpb_user_name
@@ -6502,6 +6503,9 @@ void DatabaseOptions::get(const UCHAR* dpb, USHORT dpb_length, bool& invalid_cli
 							case isc_dpb_addr_endpoint:
 								address.getString(dpb_remote_address);
 								break;
+							case isc_dpb_addr_flags:
+								dpb_remote_flags = address.getInt();
+								break;
 							default:
 								break;
 						}
@@ -6782,6 +6786,7 @@ static JAttachment* create_attachment(const PathName& alias_name,
 	attachment->att_network_protocol = options.dpb_network_protocol;
 	attachment->att_remote_address = options.dpb_remote_address;
 	attachment->att_remote_pid = options.dpb_remote_pid;
+	attachment->att_remote_flags = options.dpb_remote_flags;
 	attachment->att_remote_process = options.dpb_remote_process;
 	attachment->att_remote_host = options.dpb_remote_host;
 	attachment->att_remote_os_user = options.dpb_remote_os_user;

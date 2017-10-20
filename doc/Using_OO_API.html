@@ -15,6 +15,7 @@
 	<meta name="changed" content="2017-07-27T13:17:58.205479048">
 	<meta name="created" content="00:00:00">
 	<meta name="changed" content="2017-07-26T10:39:38.045248271">
+	<meta name="changed" content="2017-10-16T18:57:56.725603578"/>
 	<meta name="created" content="00:00:00">
 	<meta name="changed" content="2017-02-02T17:00:07.121995034">
 	<meta name="created" content="2013-05-31T00:00:00.010003100">
@@ -24,7 +25,7 @@
 	<meta name="CHANGEDBY" content="Alex Peshkoff">
 	<meta name="CHANGEDBY" content="Alex Peshkoff">
 	<style type="text/css">
-		@page { margin: 2.01cm }
+		@page { size: 21.59cm 27.94cm; margin: 2.01cm }
 		h1 { color: #000000 }
 		p { margin-bottom: 0.2cm; color: #000000 }
 	</style>
@@ -1325,8 +1326,11 @@ implementation into dynamic library (.dll in windows or .so in linux)
 later referenced as </font><font size="4" style="font-size: 14pt"><i>plugin
 module</i></font> <font size="4" style="font-size: 14pt">or just
 </font><font size="4" style="font-size: 14pt"><i>module</i></font><font size="4" style="font-size: 14pt">.
-In most cases single plugin is place in dynamic library but in common
-case. One of that interfaces – <a href="#PluginModule">IPluginModule</a>
+In most cases single plugin is place</font><font size="4" style="font-size: 14pt">d</font><font size="4" style="font-size: 14pt">
+in</font><font size="4" style="font-size: 14pt">to</font><font size="4" style="font-size: 14pt">
+dynamic library but in common case </font><font size="4" style="font-size: 14pt">multiple
+plugins may coexist in single dynamic library</font><font size="4" style="font-size: 14pt">.
+One of that interfaces – <a href="#PluginModule">IPluginModule</a>
 – is module-wide (as more or less clear from it's name), others are
 per plugin. Also each plugin module should contain special exported
 entrypoint firebird_plugin() which name is defined in include file
@@ -2375,7 +2379,7 @@ with execution of SQL statements.</font></p>
 	getBuilder(StatusType* status) - returns <a href="#MessageMetadata">MetadataBuilder</a>
 	interface initialized with this message metadata.</font></p>
 	<li/>
-<p><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">unsigned
+<p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt">unsigned
 	getMessageLength(StatusType* status) - returns length of message
 	buffer (use it to allocate memory for the buffer).</font></font></p>
 	<li/>
@@ -2770,7 +2774,7 @@ interface – replaces (partially) isc_stmt_handle.</font></p>
 	getOutputMetadata(StatusType* status) – returns output values
 	metadata.</font></p>
 	<li/>
-<p style="margin-bottom: 0cm"><font face="Liberation Serif, serif"><font size="4" style="font-size: 14pt">ITransaction*
+<p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt">ITransaction*
 	execute(StatusType* status, ITransaction* transaction,
 	IMessageMetadata* inMetadata, void* inBuffer, IMessageMetadata*
 	outMetadata, void* outBuffer) – executes any SQL statement except
@@ -2803,9 +2807,9 @@ interface – replaces (partially) isc_stmt_handle.</font></p>
 	isc_dsql_set_cursor_name(). </font></font>
 	</p>
 	<li/>
-<p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt"><font face="Liberation Serif, serif">void
-	free(StatusType* status) – free state</font>ment, releases
-	interface on success.</font></p>
+<p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt">void
+	free(StatusType* status) – free statement, releases interface on
+	success.</font></p>
 	<li/>
 <p style="margin-bottom: 0cm"><font size="4" style="font-size: 14pt">unsigned
 	getFlags(StatusType* status) – returns <a href="#Values returned by getFlags">flags</a>

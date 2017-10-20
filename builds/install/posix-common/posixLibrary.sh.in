@@ -219,68 +219,15 @@ checkLibrary() {
 #------------------------------------------------------------------------
 # Make sure we have required libraries installed
 checkLibraries() {
-	if [ "@TOMBUILD@" != "Y" ]
+	if [ "@TOMMATH_BUILD@" != "Y" ]
 	then
 		checkLibrary tommath
 	fi
-}
 
-
-#------------------------------------------------------------------------
-#  resetInetdServer
-#  Works for both inetd and xinetd
-
-resetInetdServer() {
-	pid=`grepProcess "inetd|xinetd" | awk '{print $2}'`
-    if [ "$pid" ]
-    then
-        kill -HUP $pid
-    fi
-}
-
-
-#------------------------------------------------------------------------
-# remove the xinetd config file(s)
-
-removeXinetdEntry() {
-	file="${XINETD}${fb_startup_name}"
-	[ -f $file ] && rm -f $file
-}
-
-
-#------------------------------------------------------------------------
-# remove the line from inetd file
-
-removeInetdEntry() {
-    FileName=/etc/inetd.conf
-    oldLine=`grep "^@FB_SERVICE_NAME@" $FileName`
-    removeLineFromFile "$FileName" "$oldLine"
-}
-
-
-#------------------------------------------------------------------------
-#  Remove (x)inetd service entry and restart the service.
-#  Check to see if we have xinetd installed or plain inetd.  
-#  Install differs for each of them.
-
-removeInetdServiceEntry() {
-	if [ "$OS_Has_Specific_Classic_Startup" ]
+	if [ "@TOMCRYPT_BUILD@" != "Y" ]
 	then
-		osStopClassicServer
-		osUnregisterClassicServer
-		return
+		checkLibrary tomcrypt
 	fi
-
-    if [ -d /etc/xinetd.d ]
-    then
-        removeXinetdEntry
-    elif [ -f /etc/inetd.conf ]
-	then
-        removeInetdEntry
-    fi
-
-    # make [x]inetd reload configuration
-	resetInetdServer
 }
 
 
@@ -343,28 +290,22 @@ checkIfServerRunning() {
 # The following check for running interbase or firebird 1.0 servers.
 
     checkString=`grepProcess "ibserver|ibguard"`
-    if [ ! -z "$checkString" ] 
+    if [ ! -z "$checkString" ]
     then
-        echo "An instance of the Firebird/InterBase Super server seems to be running." 
+        echo "An instance of the Firebird/InterBase Super server seems to be running."
         echo "(the ibserver or ibguard process was detected running on your system)"
         echo "Please quit all Firebird applications and then proceed."
-        exit 1 
+        exit 1
     fi
 
     checkString=`grepProcess "gds_inet_server|gds_pipe"`
-    if [ ! -z "$checkString" ] 
+    if [ ! -z "$checkString" ]
     then
-        echo "An instance of the Firebird/InterBase Classic server seems to be running." 
+        echo "An instance of the Firebird/InterBase Classic server seems to be running."
         echo "(the gds_inet_server or gds_pipe process was detected running on your system)"
-        echo "Please quit all Firebird applications and then proceed." 
-        exit 1 
+        echo "Please quit all Firebird applications and then proceed."
+        exit 1
     fi
-
-# have to be root to modify (x)inetd
-	if [ "$1" != "install-embedded" ]
-	then
-		removeInetdServiceEntry
-	fi
 }
 
 
@@ -408,7 +349,7 @@ replaceLineInFile() {
     newLine="$2"
     oldLine=`grep "$3" $FileName`
 
-    if [ -z "$oldLine" ] 
+    if [ -z "$oldLine" ]
       then
         echo "$newLine" >> "$FileName"
     elif [ "$oldLine" != "$newLine"  ]
@@ -766,7 +707,7 @@ archivePriorInstallSystemFiles() {
         echo "    The installation target directory $DestFile already exists."
         echo "    This and other related files found will be"
         echo "    archived in the file : ${tarArc}"
-        echo "" 
+        echo ""
 
         if [ ! -z "$InteractiveInstall" ]
         then
@@ -861,7 +802,7 @@ removeInstalledFiles() {
 
 #------------------------------------------------------------------------
 # removeUninstallFiles
-# Under the install directory remove all the empty directories 
+# Under the install directory remove all the empty directories
 # If some files remain then
 
 removeUninstallFiles() {
@@ -873,7 +814,7 @@ removeUninstallFiles() {
 
 #------------------------------------------------------------------------
 # removeEmptyDirs
-# Under the install directory remove all the empty directories 
+# Under the install directory remove all the empty directories
 # This routine loops, since deleting a directory possibly makes
 # the parent empty as well
 
@@ -1006,64 +947,6 @@ fixFilePermissions() {
 }
 
 
-#------------------------------------------------------------------------
-#  Update inetd service entry
-#  This just adds/replaces the service entry line
-
-updateInetdEntry() {
-    newLine="@FB_SERVICE_NAME@  stream  tcp     nowait.30000      $RunUser @FB_SBINDIR@/firebird firebird # Firebird Database Remote Server"
-    replaceLineInFile /etc/inetd.conf "$newLine" "^@FB_SERVICE_NAME@"
-}
-
-
-#------------------------------------------------------------------------
-#  Update xinetd service entry
-
-updateXinetdEntry() {
-    InitFile="${XINETD}${fb_startup_name}"
-    cp @FB_MISCDIR@/firebird.xinetd $InitFile
-
-    if [ -f $InitFile ]
-    then
-        editFile $InitFile user "\tuser\t\t\t= $RunUser"
-        editFile $InitFile server "\tserver\t\t= ${fb_install_prefix}/bin/firebird"
-        yesno=yes
-        [ ${fb_install_prefix} = ${default_prefix} ] && yesno=no
-       	editFile $InitFile disable "\tdisable\t\t= ${yesno}"
-    fi
-}
-
-
-#------------------------------------------------------------------------
-#  Update inetd service entry
-#  Check to see if we have xinetd installed or plain inetd.
-#  Install differs for each of them.
-
-updateInetdServiceEntry() {
-	if ! standaloneServerInstalled
-	then
-		if [ "$OS_Has_Specific_Classic_Startup" ]
-		then
-			osRegisterClassicServer
-			return
-		fi
-
-	    if [ -d /etc/xinetd.d ]
-    	then
-        	updateXinetdEntry
-    	else
-    		if [ ${fb_install_prefix} = ${default_prefix} ]
-    		then
-        		updateInetdEntry
-        	else
-        		echo "Install of classic server in non-default path is not supported with inetd - xinetd needed"
-        		exit 1
-        	fi
-		fi
-    fi
-}
-
-
 fbUsage() {
 	pf=""
 	if [ "@CHANGE_PATH_SUPPORT@" = "yes" ]
@@ -1172,21 +1055,11 @@ extractBuildroot() {
 
 
 #---------------------------------------------------------------------------
-#  depending upon presence of startup script starts super or classic server
+#  starts firebird server
 
 startFirebird() {
 	if [ "${fb_install_prefix}" = "${default_prefix}" ]
 	then
-		if standaloneServerInstalled; then
-			startService
-		else
-			if [ "$OS_Has_Specific_Classic_Startup" ]
-			then
-				osStartClassicServer
-				return
-			fi
-
-			resetInetdServer
-		fi
+		startService
 	fi
 }

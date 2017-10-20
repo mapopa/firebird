@@ -176,7 +176,7 @@ void MOV_get_metaname(Jrd::thread_db* tdbb, const dsc* desc, MetaName& name)
 
 	fb_assert(length && ptr);
 	fb_assert(length <= MAX_SQL_IDENTIFIER_LEN);
-	fb_assert(ttype == ttype_metadata);
+	fb_assert(ttype == ttype_ascii || ttype == ttype_metadata);
 
 	name.assign(reinterpret_cast<char*>(ptr), length);
 }
@@ -437,6 +437,18 @@ Decimal128 MOV_get_dec128(Jrd::thread_db* tdbb, const dsc* desc)
  **************************************/
 
 	return CVT_get_dec128(desc, tdbb->getAttachment()->att_dec_status, ERR_post);
+}
+
+
+DecimalFixed MOV_get_dec_fixed(Jrd::thread_db* tdbb, const dsc* desc, SSHORT scale)
+{
+/**************************************
+ *
+ *	M O V _ g e t _ d e c _ f i x e d
+ *
+ **************************************/
+
+	return CVT_get_dec_fixed(desc, scale, tdbb->getAttachment()->att_dec_status, ERR_post);
 }
 
 

@@ -46,6 +46,7 @@
 #include "../../dsql/sqlda_pub.h"
 #include "../../common/classes/ImplementHelper.h"
 #include "../../common/SimpleStatusVector.h"
+#include "../../jrd/status.h"
 
 using namespace Firebird;
 using namespace Jrd;
@@ -754,6 +755,9 @@ void TracePluginImpl::appendParams(ITraceParams* params)
 			case dtype_dec128:
 				paramtype = "decfloat(34)";
 				break;
+			case dtype_dec_fixed:
+				paramtype = "decimal";
+				break;
 
 			case dtype_sql_date:
 				paramtype = "date";
@@ -789,19 +793,41 @@ void TracePluginImpl::appendParams(ITraceParams* params)
 			{
 				// Handle potentially long string values
 				case dtype_text:
-					formatStringArgument(paramvalue,
-						parameters->dsc_address, parameters->dsc_length);
+				{
+					FbLocalStatus status;
+					const char* text = params->getTextUTF8(&status, i);
+
+					if (status->getState() & IStatus::STATE_ERRORS)
+					{
+						formatStringArgument(paramvalue,
+							parameters->dsc_address, parameters->dsc_length);
+					}
+					else
+						formatStringArgument(paramvalue, (UCHAR*) text, strlen(text));
+
 					break;
+				}
 				case dtype_cstring:
 					formatStringArgument(paramvalue,
 						parameters->dsc_address,
 						strlen(reinterpret_cast<const char*>(parameters->dsc_address)));
 					break;
 				case dtype_varying:
-					formatStringArgument(paramvalue,
-						parameters->dsc_address + 2,
-						*(USHORT*)parameters->dsc_address);
+				{
+					FbLocalStatus status;
+					const char* text = params->getTextUTF8(&status, i);
+
+					if (status->getState() & IStatus::STATE_ERRORS)
+					{
+						formatStringArgument(paramvalue,
+							parameters->dsc_address + 2,
+							*(USHORT*)parameters->dsc_address);
+					}
+					else
+						formatStringArgument(paramvalue, (UCHAR*) text, strlen(text));
+
 					break;
+				}
 
 				// Handle quad
 				case dtype_quad:
@@ -852,6 +878,20 @@ void TracePluginImpl::appendParams(ITraceParams* params)
 
 				case dtype_dec128:
 					((Decimal128*) parameters->dsc_address)->toString(paramvalue);
+					break;
+
+				case dtype_dec_fixed:
+					try
+					{
+						DecimalStatus decSt(DEC_Errors);
+						((DecimalFixed*) parameters->dsc_address)->toString(decSt, parameters->dsc_scale, paramvalue);
+					}
+					catch (const Exception& ex)
+					{
+						StaticStatusVector status;
+						ex.stuffException(status);
+						paramvalue.printf("Conversion error %d\n", status[1]);
+					}
 					break;
 
 				case dtype_sql_date:
@@ -1493,24 +1533,18 @@ void TracePluginImpl::register_sql_statement(ITraceSQLStatement* statement)
 	if (!sql_length)
 		return;
 
-	if (config.include_filter.hasData() || config.exclude_filter.hasData())
+	if (config.include_filter.hasData())
 	{
-		const char* sqlUtf8 = statement->getTextUTF8();
-		FB_SIZE_T utf8_length = fb_strlen(sqlUtf8);
+		include_matcher->reset();
+		include_matcher->process((const UCHAR*) sql, sql_length);
+		need_statement = include_matcher->result();
+	}
 
-		if (config.include_filter.hasData())
-		{
-			include_matcher->reset();
-			include_matcher->process((const UCHAR*) sqlUtf8, utf8_length);
-			need_statement = include_matcher->result();
-		}
-
-		if (need_statement && config.exclude_filter.hasData())
-		{
-			exclude_matcher->reset();
-			exclude_matcher->process((const UCHAR*) sqlUtf8, utf8_length);
-			need_statement = !exclude_matcher->result();
-		}
+	if (need_statement && config.exclude_filter.hasData())
+	{
+		exclude_matcher->reset();
+		exclude_matcher->process((const UCHAR*) sql, sql_length);
+		need_statement = !exclude_matcher->result();
 	}
 
 	if (need_statement)
