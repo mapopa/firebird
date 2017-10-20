@@ -331,14 +331,42 @@ private:
 		memcpy(blobId, &genId, sizeof(genId));
 	}
 
-	UCHAR* allocateBuffer()
-	{
-		return FB_NEW UCHAR[bufferSize];
-	}
-
 	bool batchHasData()
 	{
 		return batchActive;
+	}
+
+	// working with message stream buffer
+	void putMessageData(ULONG count, const void* p)
+	{
+		fb_assert(messageStreamBuffer);
+
+		const UCHAR* ptr = reinterpret_cast<const UCHAR*>(p);
+
+		while(count)
+		{
+			ULONG remainSpace = messageBufferSize - messageStream;
+			ULONG step = MIN(count, remainSpace);
+			if (step == messageBufferSize)
+			{
+				// direct packet sent
+				sendMessagePacket(step, ptr);
+			}
+			else
+			{
+				// use buffer
+				memcpy(&messageStreamBuffer[messageStream * alignedSize], ptr, step * alignedSize);
+				messageStream += step;
+				if (messageStream == messageBufferSize)
+				{
+					sendMessagePacket(messageBufferSize, messageStreamBuffer);
+					messageStream = 0;
+				}
+			}
+
+			count -= step;
+			ptr += step * alignedSize;
+		}
 	}
 
 	// working with blob stream buffer
@@ -346,8 +374,8 @@ private:
 	{
 		alignBlobBuffer(blobAlign);
 
-		fb_assert(blobStream - blobStreamBuffer <= bufferSize);
-		ULONG space = bufferSize - (blobStream - blobStreamBuffer);
+		fb_assert(blobStream - blobStreamBuffer <= blobBufferSize);
+		ULONG space = blobBufferSize - (blobStream - blobStreamBuffer);
 		if (space < Rsr::BatchStream::SIZEOF_BLOB_HEAD)
 		{
 			sendBlobPacket(blobStream - blobStreamBuffer, blobStreamBuffer);
@@ -373,21 +401,21 @@ private:
 
 		while(size)
 		{
-			ULONG space = bufferSize - (blobStream - blobStreamBuffer);
+			ULONG space = blobBufferSize - (blobStream - blobStreamBuffer);
 			ULONG step = MIN(size, space);
-			if (step == bufferSize)
+			if (step == blobBufferSize)
 			{
 				// direct packet sent
-				sendBlobPacket(bufferSize, ptr);
+				sendBlobPacket(blobBufferSize, ptr);
 			}
 			else
 			{
 				// use buffer
 				memcpy(blobStream, ptr, step);
 				blobStream += step;
-				if (blobStream - blobStreamBuffer == bufferSize)
+				if (blobStream - blobStreamBuffer == blobBufferSize)
 				{
-					sendBlobPacket(bufferSize, blobStreamBuffer);
+					sendBlobPacket(blobBufferSize, blobStreamBuffer);
 					blobStream = blobStreamBuffer;
 					sizePointer = NULL;
 				}
@@ -449,13 +477,14 @@ private:
 	}
 
 	void sendBlobPacket(unsigned size, const UCHAR* ptr);
+	void sendMessagePacket(unsigned size, const UCHAR* ptr);
 
 	Firebird::AutoPtr<UCHAR, Firebird::ArrayDelete<UCHAR> > messageStreamBuffer, blobStreamBuffer;
-	UCHAR* messageStream;
+	ULONG messageStream;
 	UCHAR* blobStream;
 	ULONG* sizePointer;
 
-	ULONG messageSize, alignedSize, bufferSize, flags;
+	ULONG messageSize, alignedSize, blobBufferSize, messageBufferSize, flags;
 	Statement* stmt;
 	RefPtr<IMessageMetadata> format;
 	ISC_QUAD genId;
@@ -2191,9 +2220,9 @@ Batch* Statement::createBatch(CheckStatusWrapper* status, IMessageMetadata* inMe
 
 
 Batch::Batch(Statement* s, IMessageMetadata* inFmt, unsigned parLength, const unsigned char* par)
-	: messageStream(nullptr), blobStream(nullptr), sizePointer(nullptr),
-	  messageSize(0), alignedSize(0), bufferSize(0), flags(0), stmt(s),
-	  format(inFmt), blobAlign(0), blobPolicy(BLOB_NONE),
+	: messageStream(0), blobStream(nullptr), sizePointer(nullptr),
+	  messageSize(0), alignedSize(0), blobBufferSize(0), messageBufferSize(0), flags(0),
+	  stmt(s), format(inFmt), blobAlign(0), blobPolicy(BLOB_NONE),
 	  segmented(false), defSegmented(false), batchActive(false), tmpStatement(false)
 {
 	LocalStatus ls;
@@ -2247,13 +2276,15 @@ Batch::Batch(Statement* s, IMessageMetadata* inFmt, unsigned parLength, const un
 	Rdb* rdb = statement->rsr_rdb;
 	CHECK_HANDLE(rdb, isc_bad_db_handle);
 	rem_port* port = rdb->rdb_port;
-	bufferSize = port->getPortConfig()->getClientBatchBuffer();
+	blobBufferSize = port->getPortConfig()->getClientBatchBuffer();
+	messageBufferSize = blobBufferSize / alignedSize;
+	if (!messageBufferSize)
+		messageBufferSize = 1;
 
-	messageStreamBuffer.reset(allocateBuffer());
-	messageStream = messageStreamBuffer;
+	messageStreamBuffer.reset(FB_NEW UCHAR[messageBufferSize * alignedSize]);
 	if (blobPolicy != BLOB_NONE)
 	{
-		blobStreamBuffer.reset(allocateBuffer());
+		blobStreamBuffer.reset(FB_NEW UCHAR[blobBufferSize]);
 		blobStream = blobStreamBuffer;
 	}
 }
@@ -2275,21 +2306,12 @@ void Batch::add(CheckStatusWrapper* status, unsigned count, const void* inBuffer
 		Rdb* rdb = statement->rsr_rdb;
 		CHECK_HANDLE(rdb, isc_bad_db_handle);
 		rem_port* port = rdb->rdb_port;
-		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
 
 		if (count == 0)
 			return;
 
-		PACKET* packet = &rdb->rdb_packet;
-		packet->p_operation = op_batch_msg;
-		P_BATCH_MSG* batch = &packet->p_batch_msg;
-		batch->p_batch_statement = statement->rsr_id;
-		batch->p_batch_messages = count;
-		batch->p_batch_data.cstr_address = (UCHAR*) inBuffer;
-		statement->rsr_batch_size = alignedSize;
-
-		send_partial_packet(port, packet);
-		defer_packet(port, packet, true);
+		RefMutexGuard portGuard(*port->port_sync, FB_FUNCTION);
+		putMessageData(count, inBuffer);
 
 		batchActive = true;
 	}
@@ -2297,6 +2319,27 @@ void Batch::add(CheckStatusWrapper* status, unsigned count, const void* inBuffer
 	{
 		ex.stuffException(status);
 	}
+}
+
+
+void Batch::sendMessagePacket(unsigned count, const UCHAR* ptr)
+{
+	Rsr* statement = stmt->getStatement();
+	CHECK_HANDLE(statement, isc_bad_req_handle);
+	Rdb* rdb = statement->rsr_rdb;
+	CHECK_HANDLE(rdb, isc_bad_db_handle);
+	rem_port* port = rdb->rdb_port;
+
+	PACKET* packet = &rdb->rdb_packet;
+	packet->p_operation = op_batch_msg;
+	P_BATCH_MSG* batch = &packet->p_batch_msg;
+	batch->p_batch_statement = statement->rsr_id;
+	batch->p_batch_messages = count;
+	batch->p_batch_data.cstr_address = const_cast<UCHAR*>(ptr);
+	statement->rsr_batch_size = alignedSize;
+
+	send_partial_packet(port, packet);
+	defer_packet(port, packet, true);
 }
 
 
