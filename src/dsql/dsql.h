@@ -163,9 +163,9 @@ public:
 
 	~dsql_dbb();
 
-	MemoryPool* createPool(MemoryPool* parent = NULL)
+	MemoryPool* createPool()
 	{
-		return dbb_attachment->createPool(parent);
+		return dbb_attachment->createPool();
 	}
 
 	void deletePool(MemoryPool* pool)
@@ -486,8 +486,6 @@ public:
 	}
 
 public:
-	MemoryPool& getPool() { return PermanentStorage::getPool(); }
-
 	Type getType() const { return type; }
 	void setType(Type value) { type = value; }
 
@@ -569,7 +567,7 @@ public:
 		return statement;
 	}
 
-	virtual void dsqlPass(thread_db* tdbb, DsqlCompilerScratch* scratch,
+	virtual void dsqlPass(thread_db* tdbb, DsqlCompilerScratch* scratch, bool* destroyScratchPool,
 		ntrace_result_t* traceResult) = 0;
 
 	virtual void execute(thread_db* tdbb, jrd_tra** traHandle,
@@ -603,6 +601,7 @@ private:
 
 public:
 	const DsqlCompiledStatement* statement;
+	MemoryPool* liveScratchPool;
 	Firebird::Array<DsqlCompiledStatement*> cursors;	// Cursor update statements
 
 	dsql_dbb* req_dbb;			// DSQL attachment
@@ -642,7 +641,7 @@ public:
 	{
 	}
 
-	virtual void dsqlPass(thread_db* tdbb, DsqlCompilerScratch* scratch,
+	virtual void dsqlPass(thread_db* tdbb, DsqlCompilerScratch* scratch, bool* destroyScratchPool,
 		ntrace_result_t* traceResult);
 
 	virtual void execute(thread_db* tdbb, jrd_tra** traHandle,
@@ -672,7 +671,7 @@ public:
 	{
 	}
 
-	virtual void dsqlPass(thread_db* tdbb, DsqlCompilerScratch* scratch,
+	virtual void dsqlPass(thread_db* tdbb, DsqlCompilerScratch* scratch, bool* destroyScratchPool,
 		ntrace_result_t* traceResult);
 
 	virtual void execute(thread_db* tdbb, jrd_tra** traHandle,
@@ -699,7 +698,7 @@ public:
 		req_traced = false;
 	}
 
-	virtual void dsqlPass(thread_db* tdbb, DsqlCompilerScratch* scratch,
+	virtual void dsqlPass(thread_db* tdbb, DsqlCompilerScratch* scratch, bool* destroyScratchPool,
 		ntrace_result_t* traceResult);
 
 	virtual void execute(thread_db* tdbb, jrd_tra** traHandle,
@@ -721,7 +720,7 @@ public:
 		req_traced = false;
 	}
 
-	virtual void dsqlPass(thread_db* tdbb, DsqlCompilerScratch* scratch,
+	virtual void dsqlPass(thread_db* tdbb, DsqlCompilerScratch* scratch, bool* destroyScratchPool,
 		ntrace_result_t* traceResult);
 
 	virtual void execute(thread_db* tdbb, jrd_tra** traHandle,
