@@ -35,7 +35,6 @@
 #include "../common/classes/fb_string.h"
 #include "../common/utils_proto.h"
 #include "../common/classes/BatchCompletionState.h"
-#include "../common/isBpbSegmented.h"
 
 using namespace Firebird;
 using namespace Jrd;

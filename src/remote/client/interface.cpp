@@ -64,7 +64,6 @@
 #include "firebird/Interface.h"
 #include "../common/StatementMetadata.h"
 #include "../common/IntlParametersBlock.h"
-#include "../common/isBpbSegmented.h"
 
 #include "../auth/SecurityDatabase/LegacyClient.h"
 #include "../auth/SecureRemotePassword/client/SrpClient.h"

@@ -206,6 +206,9 @@ namespace fb_utils
 		if (up)
 			name = up;
 	}
+
+	// Frequently used actions with clumplets
+	bool isBpbSegmented(unsigned parLength, const unsigned char* par);
 } // namespace fb_utils
 
 #endif // INCLUDE_UTILS_PROTO_H

@@ -42,7 +42,7 @@
 #include "../common/StatusHolder.h"
 #include "../common/classes/stack.h"
 #include "../common/classes/BatchCompletionState.h"
-#include "../common/isBpbSegmented.h"
+#include "../common/utils_proto.h"
 #include "../dsql/DsqlBatch.h"
 
 using namespace Firebird;
